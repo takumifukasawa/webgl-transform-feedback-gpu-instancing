@@ -4,6 +4,7 @@ import {Vector3} from "./js/Vector3.js";
 import {GPU} from "./js/GPU.js";
 import {VertexArrayObject} from "./js/VertexArrayObject.js";
 import {Shader} from "./js/Shader.js";
+// import {TransformFeedback} from "./js/TransformFeedback.js";
 
 const wrapperElement = document.getElementById("js-wrapper")
 const canvasElement = document.getElementById("js-canvas");
@@ -189,6 +190,8 @@ const main = () => {
             value: Matrix4.identity()
         },
     };
+    
+    // const transformFeedback = new TransformFeedback()
 
     const onMouseMove = (e) => {
         const nx = (e.clientX / width) * 2 - 1;
