@@ -7,7 +7,7 @@ export class Shader extends GLObject {
         return this.#program;
     }
     
-    constructor({ gpu, vertexShader, fragmentShader }) {
+    constructor({ gpu, vertexShader, fragmentShader, transformFeedbackVaryings }) {
         super();
        
         // cache
@@ -50,6 +50,14 @@ export class Shader extends GLObject {
         // attach shaders
         gl.attachShader(this.#program, vs);
         gl.attachShader(this.#program, fs);
+        
+        if(transformFeedbackVaryings && transformFeedbackVaryings.length > 0) {
+            gl.transformFeedbackVaryings(
+                this.#program,
+                transformFeedbackVaryings,
+                gl.SEPARATE_ATTRIBS // or INTERLEAVED_ATTRIBS
+            );
+        }
        
         // program link to gl context
         gl.linkProgram(this.#program);
