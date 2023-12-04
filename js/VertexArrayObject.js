@@ -1,10 +1,9 @@
-﻿
-import { GLObject } from "./GLObject.js";
-import { IndexBufferObject } from "./IndexBufferObject.js";
+﻿import {GLObject} from "./GLObject.js";
+import {IndexBufferObject} from "./IndexBufferObject.js";
 
 export class VertexArrayObject extends GLObject {
     #vao;
-    #vboList = {};
+    #vboList;
     #gpu;
     #ibo;
     indices;
@@ -16,11 +15,16 @@ export class VertexArrayObject extends GLObject {
     get glObject() {
         return this.#vao;
     }
+    
+    getBuffers() {
+        return this.#vboList.map(({ vbo }) => vbo);
+    }
 
     constructor({gpu, attributes, indices = null}) {
         super();
 
         this.#gpu = gpu;
+        this.#vboList = [];
 
         const gl = this.#gpu.gl;
         this.#vao = gl.createVertexArray();
@@ -28,19 +32,18 @@ export class VertexArrayObject extends GLObject {
         // bind vertex array to webgl context
         gl.bindVertexArray(this.#vao);
 
-        Object.keys(attributes).forEach(key => {
-            const attribute = attributes[key];
-            const { data, size, location, divisor } = attribute;
+        attributes.forEach(attribute => {
+            const {name, data, size, location, divisor, usage} = attribute;
             const vbo = gl.createBuffer();
             gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
-            gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW); // static draw 固定
+            gl.bufferData(gl.ARRAY_BUFFER, data, usage);
             gl.enableVertexAttribArray(location);
             // size ... 頂点ごとに埋める数
             // stride is always 0 because buffer is not interleaved.
             // ref:
             // - https://developer.mozilla.org/ja/docs/Web/API/WebGLRenderingContext/vertexAttribPointer
             // - https://developer.mozilla.org/en-US/docs/Web/API/WebGL2RenderingContext/vertexAttribIPointer
-            switch(data.constructor) {
+            switch (data.constructor) {
                 case Float32Array:
                     gl.vertexAttribPointer(location, size, gl.FLOAT, false, 0, 0);
                     break;
@@ -48,15 +51,22 @@ export class VertexArrayObject extends GLObject {
                     gl.vertexAttribIPointer(location, size, gl.UNSIGNED_SHORT, 0, 0);
                     break;
             }
-            if(divisor) {
+            if (divisor) {
                 gl.vertexAttribDivisor(location, divisor);
             }
 
-            this.#vboList[key] = { vbo };
+            this.#vboList.push({
+                name,
+                vbo,
+                usage,
+                location,
+                size,
+                divisor
+            });
         });
 
-        if(indices) {
-            this.#ibo = new IndexBufferObject({ gpu, indices })
+        if (indices) {
+            this.#ibo = new IndexBufferObject({gpu, indices})
             this.indices = indices;
         }
 
@@ -67,7 +77,7 @@ export class VertexArrayObject extends GLObject {
         gl.bindBuffer(gl.ARRAY_BUFFER, null);
 
         // unbind index buffer
-        if(this.#ibo) {
+        if (this.#ibo) {
             this.#ibo.unbind();
         }
     }

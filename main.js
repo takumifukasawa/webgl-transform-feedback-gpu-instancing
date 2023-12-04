@@ -149,23 +149,27 @@ const main = () => {
     const boxGeometryData = createBoxGeometry();
     const geometry = new VertexArrayObject({
         gpu,
-        attributes: {
-            position: {
+        attributes: [
+            {
+                name: 'position',
                 data: new Float32Array(boxGeometryData.positions),
                 size: 3,
                 location: 0,
+                usage: gl.STATIC_DRAW,
             },
-            normal: {
+            {
+                name: 'normal',
                 data: new Float32Array(boxGeometryData.normals),
                 size: 3,
                 location: 1,
+                usage: gl.STATIC_DRAW,
             },
             // color: {
             //     data: new Float32Array(boxGeometryData.normals),
             //     size: 3,
             //     location: 1,
             // },
-        },
+        ],
         indices: boxGeometryData.indices
     });
 
