@@ -50,7 +50,7 @@ export class Shader extends GLObject {
         // attach shaders
         gl.attachShader(this.#program, vs);
         gl.attachShader(this.#program, fs);
-        
+      
         if(transformFeedbackVaryings && transformFeedbackVaryings.length > 0) {
             gl.transformFeedbackVaryings(
                 this.#program,

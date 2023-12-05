@@ -9,11 +9,15 @@ export class TransformFeedbackBuffer extends GLObject {
     attributes;
     vertexArrayObject;
     drawCount;
+    transformFeedback;
+    outputs;
 
-    constructor({gpu, attributes, transformFeedbackVaryings, vertexShader, fragmentShader, uniforms, drawCount}) {
+    constructor({gpu, attributes, varyings, vertexShader, fragmentShader, uniforms, drawCount}) {
         super();
 
         const gl = gpu.gl;
+
+        const transformFeedbackVaryings = varyings.map(({name}) => name);
 
         this.shader = new Shader({gpu, vertexShader, fragmentShader, transformFeedbackVaryings});
         this.uniforms = uniforms;
@@ -31,11 +35,16 @@ export class TransformFeedbackBuffer extends GLObject {
             attributes: attributes,
         });
 
-        const outputBuffers = transformFeedbackVaryings.map(({data}) => {
+        this.outputs = [];
+       
+        const outputBuffers = varyings.map(({data}) => {
             const buffer = gl.createBuffer();
             gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-            gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+            gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
             gl.bindBuffer(gl.ARRAY_BUFFER, null);
+            this.outputs.push({
+                buffer
+            })
             return buffer;
         });
 
@@ -44,5 +53,6 @@ export class TransformFeedbackBuffer extends GLObject {
             buffers: outputBuffers
         });
 
+        this.transformFeedback = transformFeedback;
     }
 }

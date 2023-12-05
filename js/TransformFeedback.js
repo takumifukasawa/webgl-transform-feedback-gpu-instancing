@@ -16,7 +16,7 @@ export class TransformFeedback extends GLObject {
         const gl = this.#gpu.gl;
 
         this.#transformFeedback = gl.createTransformFeedback();
-        gl.bindTransformFeedback(this.#transformFeedback, this.glObject);
+        gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, this.glObject);
 
         for (let i = 0; i < buffers.length; i++) {
             gl.bindBuffer(gl.ARRAY_BUFFER, buffers[i]);
@@ -24,6 +24,6 @@ export class TransformFeedback extends GLObject {
             gl.bindBuffer(gl.ARRAY_BUFFER, null);
         }
 
-        gl.bindTransformFeedback(this.#transformFeedback, null);
+        gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, null);
     }
 }
