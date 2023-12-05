@@ -5,6 +5,7 @@ import {GPU} from "./js/GPU.js";
 import {VertexArrayObject} from "./js/VertexArrayObject.js";
 import {Shader} from "./js/Shader.js";
 import {TransformFeedbackBuffer} from "./js/TransformFeedbackBuffer.js";
+import {TransformFeedbackDoubleBuffer} from "./js/TransformFeedbackDoubleBuffer.js";
 // import {TransformFeedback} from "./js/TransformFeedback.js";
 
 const wrapperElement = document.getElementById("js-wrapper")
@@ -142,8 +143,8 @@ void main() {
 // main
 // ----------------------------------------------------------------------------------
 
-const updateTransformFeedbackBuffer = ({ shader, uniforms, transformFeedback, vertexArrayObject, drwaCount }) => {
-    
+const updateTransformFeedbackBuffer = ({shader, uniforms, transformFeedback, vertexArrayObject, drwaCount}) => {
+
 }
 
 const main = () => {
@@ -151,7 +152,13 @@ const main = () => {
 
     let width;
     let height;
-    
+
+    //
+    // single buffer
+    // 
+
+    console.log("===== transform feedback single buffer =====");
+
     const transformFeedbackBuffer = new TransformFeedbackBuffer({
         gpu,
         vertexShader: `#version 300 es
@@ -211,13 +218,112 @@ void main() {}
         vertexArrayObject: transformFeedbackBuffer.vertexArrayObject,
         drawCount: transformFeedbackBuffer.drawCount
     });
-    transformFeedbackBuffer.outputs.forEach(({ buffer }) => {
+    transformFeedbackBuffer.transformFeedback.buffers.forEach(({buffer}) => {
         const results = new Float32Array(3 * 2);
         gpu.gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
         gl.getBufferSubData(gl.ARRAY_BUFFER, 0, results);
         gpu.gl.bindBuffer(gl.ARRAY_BUFFER, null);
         console.log(results);
     });
+
+    //
+    // double buffer
+    // 
+
+    console.log("===== transform feedback double buffer =====");
+
+    const transformFeedbackDoubleBuffer = new TransformFeedbackDoubleBuffer({
+        gpu,
+        vertexShader: `#version 300 es
+
+precision mediump float;
+
+layout (location = 0) in vec3 srcX;
+layout (location = 1) in vec3 srcY;
+
+out vec3 resultA;
+out vec3 resultB;
+
+void main() {
+    resultA = srcX + srcY;
+    resultB = srcX * srcY;
+}
+        `,
+        fragmentShader: `#version 300 es
+        
+precision mediump float;        
+
+void main() {}
+        `,
+        attributes: [
+            {
+                name: 'srcX',
+                data: new Float32Array([0, 1, 2, 3, 4, 5]),
+                size: 3,
+                usage: gl.DYNAMIC_DRAW,
+            },
+            {
+                name: 'srcY',
+                data: new Float32Array([6, 7, 8, 9, 10, 11]),
+                size: 3,
+                usage: gl.DYNAMIC_DRAW,
+            },
+        ],
+        varyings: [
+            {
+                name: 'resultA',
+                data: new Float32Array([0, 0, 0, 0, 0, 0]),
+                size: 3
+            },
+            {
+                name: 'resultB',
+                data: new Float32Array([0, 0, 0, 0, 0, 0]),
+                size: 3
+            }
+        ],
+        uniforms: {},
+        drawCount: 2
+    });
+
+    console.log("===== transform feedback double buffer: update 1 =====");
+
+    gpu.updateTransformFeedback({
+        shader: transformFeedbackDoubleBuffer.shader,
+        uniforms: transformFeedbackDoubleBuffer.uniforms,
+        transformFeedback: transformFeedbackDoubleBuffer.write.transformFeedback,
+        vertexArrayObject: transformFeedbackDoubleBuffer.write.vertexArrayObject,
+        drawCount: transformFeedbackDoubleBuffer.drawCount
+    });
+    transformFeedbackDoubleBuffer.read.transformFeedback.buffers.forEach(({name, buffer}) => {
+        const results = new Float32Array(3 * 2);
+        gpu.gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+        gl.getBufferSubData(gl.ARRAY_BUFFER, 0, results);
+        gpu.gl.bindBuffer(gl.ARRAY_BUFFER, null);
+        console.log(results);
+    });
+
+    transformFeedbackDoubleBuffer.swap();
+
+    console.log("===== transform feedback double buffer: update 2 =====");
+
+    gpu.updateTransformFeedback({
+        shader: transformFeedbackDoubleBuffer.shader,
+        uniforms: transformFeedbackDoubleBuffer.uniforms,
+        transformFeedback: transformFeedbackDoubleBuffer.write.transformFeedback,
+        vertexArrayObject: transformFeedbackDoubleBuffer.write.vertexArrayObject,
+        drawCount: transformFeedbackDoubleBuffer.drawCount
+    });
+    transformFeedbackDoubleBuffer.read.transformFeedback.buffers.forEach(({name, buffer}) => {
+        const results = new Float32Array(3 * 2);
+        gpu.gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+        gl.getBufferSubData(gl.ARRAY_BUFFER, 0, results);
+        gpu.gl.bindBuffer(gl.ARRAY_BUFFER, null);
+        console.log(results);
+    });
+
+    //
+    // draws
+    // 
 
     const boxGeometryData = createBoxGeometry();
     const geometry = new VertexArrayObject({
@@ -262,7 +368,7 @@ void main() {}
             value: Matrix4.identity()
         },
     };
-    
+
     // const transformFeedback = new TransformFeedback()
 
     const onMouseMove = (e) => {

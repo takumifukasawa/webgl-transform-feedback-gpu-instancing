@@ -17,7 +17,7 @@ export class VertexArrayObject extends GLObject {
     }
     
     getBuffers() {
-        return this.#vboList.map(({ vbo }) => vbo);
+        return this.#vboList.map(({ name, vbo }) => ({ name, buffer: vbo }));
     }
 
     constructor({gpu, attributes, indices = null}) {
