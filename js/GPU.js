@@ -1,5 +1,4 @@
 ﻿import {PrimitiveTypes, UniformTypes} from "./constants.js";
-import {Texture} from "./Texture.js";
 
 const createWhite1x1 = () => {
     const canvas = document.createElement("canvas");
@@ -16,14 +15,9 @@ export class GPU {
     #shader;
     #vao;
     #uniforms;
-    #dummyTexture;
 
     constructor({gl}) {
         this.gl = gl;
-        this.#dummyTexture = new Texture({
-            gpu: this,
-            img: createWhite1x1(),
-        });
     }
 
     setShader(shader) {
@@ -55,23 +49,8 @@ export class GPU {
         gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     }
 
-    #getGLPrimitive(primitiveType) {
-        const gl = this.gl;
-        switch (primitiveType) {
-            case PrimitiveTypes.Points:
-                return gl.POINTS;
-            case PrimitiveTypes.Lines:
-                return gl.LINES;
-            case PrimitiveTypes.Triangles:
-                return gl.TRIANGLES;
-            default:
-                throw "invalid primitive type";
-        }
-    }
-
     setUniformValues() {
         const gl = this.gl;
-        let activeTextureIndex = 0;
 
         const setUniformValueInternal = (type, uniformName, value) => {
             const location = gl.getUniformLocation(this.#shader.glObject, uniformName);
@@ -93,17 +72,6 @@ export class GPU {
                     if (value) {
                         // arg[1] ... use transpose.
                         gl.uniformMatrix4fv(location, false, value.map(v => [...v.elements]).flat());
-                    }
-                    break;
-                case UniformTypes.Texture:
-                    if (value) {
-                        gl.activeTexture(gl.TEXTURE0 + activeTextureIndex);
-                        gl.bindTexture(
-                            gl.TEXTURE_2D,
-                            value ? value.glObject : this.#dummyTexture.glObject
-                        );
-                        gl.uniform1i(location, activeTextureIndex);
-                        activeTextureIndex++;
                     }
                     break;
                 default:
@@ -206,7 +174,5 @@ export class GPU {
                 gl.drawArrays(glPrimitiveType, startOffset, drawCount);
             }
         }
-
-        gl.bindTexture(gl.TEXTURE_2D, null);
     }
 }
