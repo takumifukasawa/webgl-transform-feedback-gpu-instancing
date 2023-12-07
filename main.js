@@ -153,11 +153,7 @@ const updateTransformFeedbackBuffer = ({shader, uniforms, transformFeedback, ver
 
 }
 
-const main = () => {
-    const targetCameraPosition = new Vector3(0, 0, 8);
-
-    let width;
-    let height;
+const transformFeedbackBufferDebugger = () => {
 
     //
     // single buffer
@@ -326,6 +322,16 @@ void main() {}
         gpu.gl.bindBuffer(gl.ARRAY_BUFFER, null);
         console.log(results);
     });
+
+}
+
+const main = () => {
+    const targetCameraPosition = new Vector3(0, 0, 8);
+
+    let width;
+    let height;
+    
+    transformFeedbackBufferDebugger()
 
     //
     // draws
