@@ -106,8 +106,8 @@ const createShader = () => {
     
 layout (location = 0) in vec3 aPosition;   
 layout (location = 1) in vec3 aNormal;   
-layout (location = 2) in vec3 aColor; 
-layout (location = 3) in vec3 aInstancePosition;
+layout (location = 2) in vec3 aInstancePosition;
+layout (location = 3) in vec3 aInstanceColor; 
 
 uniform mat4 uWorldMatrix;
 uniform mat4 uViewMatrix;
@@ -119,7 +119,7 @@ out vec4 vWorldPosition;
 
 void main() {
     vNormal = aNormal;
-    vColor = aColor;
+    vColor = aInstanceColor;
     
     vec4 localPosition = vec4(aPosition, 1.);
     localPosition.xyz += aInstancePosition;
@@ -333,8 +333,10 @@ void main() {}
 
     const boxGeometryData = createBoxGeometry();
 
+    const instanceCount = 2;
+
     const boxGeometryColorData = new Float32Array(
-        new Array(boxGeometryData.indices.length)
+        new Array(instanceCount)
             .fill(0)
             .map(() => {
                 return [Math.random(), Math.random(), Math.random()];
@@ -360,20 +362,21 @@ void main() {}
                 usage: gl.STATIC_DRAW,
             },
             {
-                name: 'color',
-                data: boxGeometryColorData,
+                name: 'instancePosition',
+                data: new Float32Array([0, 0, 0, 1, 1, 0]),
                 size: 3,
                 location: 2,
+                divisor: 1,
                 usage: gl.STATIC_DRAW
             },
             {
-                name: 'instancePosition',
-                data: new Float32Array([0, 0, 0, 1, 2, 0]),
+                name: 'instanceColor',
+                data: boxGeometryColorData,
                 size: 3,
                 location: 3,
                 divisor: 1,
                 usage: gl.STATIC_DRAW
-            }
+            },
         ],
         indices: boxGeometryData.indices
     });
@@ -438,7 +441,7 @@ void main() {}
         gpu.setUniforms(uniforms);
 
         const drawCount = geometry.indices.length;
-        gpu.draw({drawCount, instanceCount: 2});
+        gpu.draw({drawCount, instanceCount});
 
         gpu.flush();
 
