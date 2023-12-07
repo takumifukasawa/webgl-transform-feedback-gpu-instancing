@@ -107,6 +107,7 @@ const createShader = () => {
 layout (location = 0) in vec3 aPosition;   
 layout (location = 1) in vec3 aNormal;   
 layout (location = 2) in vec3 aColor; 
+layout (location = 3) in vec3 aInstancePosition;
 
 uniform mat4 uWorldMatrix;
 uniform mat4 uViewMatrix;
@@ -119,8 +120,12 @@ out vec4 vWorldPosition;
 void main() {
     vNormal = aNormal;
     vColor = aColor;
-   
-    vec4 worldPosition = uWorldMatrix * vec4(aPosition, 1.); 
+    
+    vec4 localPosition = vec4(aPosition, 1.);
+    localPosition.xyz += aInstancePosition;
+
+    // vec4 worldPosition = uWorldMatrix * vec4(aPosition, 1.); 
+    vec4 worldPosition = uWorldMatrix * localPosition; 
     gl_Position = uProjectionMatrix * uViewMatrix * worldPosition;
 }
     `,
@@ -325,8 +330,9 @@ void main() {}
     //
     // draws
     // 
+
     const boxGeometryData = createBoxGeometry();
-    
+
     const boxGeometryColorData = new Float32Array(
         new Array(boxGeometryData.indices.length)
             .fill(0)
@@ -360,6 +366,14 @@ void main() {}
                 location: 2,
                 usage: gl.STATIC_DRAW
             },
+            {
+                name: 'instancePosition',
+                data: new Float32Array([0, 0, 0, 1, 2, 0]),
+                size: 3,
+                location: 3,
+                divisor: 1,
+                usage: gl.STATIC_DRAW
+            }
         ],
         indices: boxGeometryData.indices
     });
@@ -424,7 +438,7 @@ void main() {}
         gpu.setUniforms(uniforms);
 
         const drawCount = geometry.indices.length;
-        gpu.draw({drawCount});
+        gpu.draw({drawCount, instanceCount: 2});
 
         gpu.flush();
 
