@@ -132,7 +132,7 @@ export class GPU {
         this.vao = vertexArrayObject;
 
         const gl = this.gl;
-        
+
         gl.bindVertexArray(this.vao.glObject);
 
         gl.useProgram(this.shader.glObject);
@@ -140,7 +140,7 @@ export class GPU {
         this.setUniformValues();
 
         gl.enable(gl.RASTERIZER_DISCARD);
-        
+
         gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, transformFeedback.glObject);
         gl.beginTransformFeedback(gl.POINTS);
         gl.drawArrays(gl.POINTS, 0, drawCount);
@@ -185,6 +185,7 @@ export class GPU {
 
         // プリミティブは三角形に固定
         const glPrimitiveType = gl.TRIANGLES;
+        // const glPrimitiveType = gl.LINES;
 
         // draw
         if (this.#vao.hasIndices) {
