@@ -106,19 +106,19 @@ const createShader = () => {
     
 layout (location = 0) in vec3 aPosition;   
 layout (location = 1) in vec3 aNormal;   
-// layout (location = 1) in vec3 aColor; 
+layout (location = 2) in vec3 aColor; 
 
 uniform mat4 uWorldMatrix;
 uniform mat4 uViewMatrix;
 uniform mat4 uProjectionMatrix;
 
-// out vec3 vColor;
+out vec3 vColor;
 out vec3 vNormal;
 out vec4 vWorldPosition;
 
 void main() {
     vNormal = aNormal;
-    // vColor = aColor;
+    vColor = aColor;
    
     vec4 worldPosition = uWorldMatrix * vec4(aPosition, 1.); 
     gl_Position = uProjectionMatrix * uViewMatrix * worldPosition;
@@ -128,12 +128,13 @@ void main() {
 precision mediump float;
 in vec3 vNormal;
 in vec4 vWorldPosition;
+in vec3 vColor;
 out vec4 outColor;
 void main() {
     vec3 lightDir = normalize(vec3(1., 1., 1.));
     vec3 normal = normalize(vNormal);
     float diffuse = (dot(lightDir, normal) + 1.) * .5;
-    outColor = vec4(vec3(diffuse), 1.);
+    outColor = vec4(vec3(diffuse) * vColor, 1.);
 }
     `
     });
@@ -324,8 +325,17 @@ void main() {}
     //
     // draws
     // 
-
     const boxGeometryData = createBoxGeometry();
+    
+    const boxGeometryColorData = new Float32Array(
+        new Array(boxGeometryData.indices.length)
+            .fill(0)
+            .map(() => {
+                return [Math.random(), Math.random(), Math.random()];
+            })
+            .flat()
+    );
+
     const geometry = new VertexArrayObject({
         gpu,
         attributes: [
@@ -343,11 +353,13 @@ void main() {}
                 location: 1,
                 usage: gl.STATIC_DRAW,
             },
-            // color: {
-            //     data: new Float32Array(boxGeometryData.normals),
-            //     size: 3,
-            //     location: 1,
-            // },
+            {
+                name: 'color',
+                data: boxGeometryColorData,
+                size: 3,
+                location: 2,
+                usage: gl.STATIC_DRAW
+            },
         ],
         indices: boxGeometryData.indices
     });
