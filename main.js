@@ -332,10 +332,8 @@ const main = () => {
     let height;
 
     const instanceCount = 2;
-    
-    transformFeedbackBufferDebugger()
-    
-    console.log("===== transform feedback double buffer =====");
+
+    // transformFeedbackBufferDebugger()
 
     const transformFeedbackDoubleBuffer = new TransformFeedbackDoubleBuffer({
         gpu,
@@ -351,7 +349,7 @@ out vec3 vVelocity;
 
 void main() {
     vPosition = aPosition + aVelocity;
-    vVelocity = vec3(.1, 0., 0.);
+    vVelocity = vec3(.01, 0., 0.);
 }
         `,
         fragmentShader: `#version 300 es
@@ -363,7 +361,14 @@ void main() {}
         attributes: [
             {
                 name: 'position',
-                data: new Float32Array(new Array(instanceCount * 3).fill(0)),
+                // data: new Float32Array(new Array(instanceCount * 3).fill(0)),
+                data: new Float32Array(new Array(instanceCount).fill(0).map(i => {
+                   return [
+                       Math.random() * 2 - 1,
+                       Math.random() * 2 - 1,
+                       Math.random() * 2 - 1,
+                   ]
+                }).flat()),
                 size: 3,
                 usage: gl.DYNAMIC_DRAW,
             },
@@ -390,42 +395,7 @@ void main() {}
         drawCount: instanceCount
     });
 
-    console.log("===== instances transform feedback double buffer: update 1 =====");
 
-    gpu.updateTransformFeedback({
-        shader: transformFeedbackDoubleBuffer.shader,
-        uniforms: transformFeedbackDoubleBuffer.uniforms,
-        transformFeedback: transformFeedbackDoubleBuffer.write.transformFeedback,
-        vertexArrayObject: transformFeedbackDoubleBuffer.write.vertexArrayObject,
-        drawCount: transformFeedbackDoubleBuffer.drawCount
-    });
-    transformFeedbackDoubleBuffer.read.transformFeedback.buffers.forEach(({name, buffer}) => {
-        const results = new Float32Array(3 * instanceCount);
-        gpu.gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-        gl.getBufferSubData(gl.ARRAY_BUFFER, 0, results);
-        gpu.gl.bindBuffer(gl.ARRAY_BUFFER, null);
-        console.log(results);
-    });
-    
-    transformFeedbackDoubleBuffer.swap();
-
-    console.log("===== instances transform feedback double buffer: update 2 =====");
-
-    gpu.updateTransformFeedback({
-        shader: transformFeedbackDoubleBuffer.shader,
-        uniforms: transformFeedbackDoubleBuffer.uniforms,
-        transformFeedback: transformFeedbackDoubleBuffer.write.transformFeedback,
-        vertexArrayObject: transformFeedbackDoubleBuffer.write.vertexArrayObject,
-        drawCount: transformFeedbackDoubleBuffer.drawCount
-    });
-    transformFeedbackDoubleBuffer.read.transformFeedback.buffers.forEach(({name, buffer}) => {
-        const results = new Float32Array(3 * instanceCount);
-        gpu.gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-        gl.getBufferSubData(gl.ARRAY_BUFFER, 0, results);
-        gpu.gl.bindBuffer(gl.ARRAY_BUFFER, null);
-        console.log(results);
-    });
-    
     //
     // draws
     // 
@@ -522,6 +492,23 @@ void main() {}
     };
 
     const tick = (time) => {
+        gpu.clear(0, 0, 0, 1);
+
+        gpu.updateTransformFeedback({
+            shader: transformFeedbackDoubleBuffer.shader,
+            uniforms: transformFeedbackDoubleBuffer.uniforms,
+            transformFeedback: transformFeedbackDoubleBuffer.write.transformFeedback,
+            vertexArrayObject: transformFeedbackDoubleBuffer.write.vertexArrayObject,
+            drawCount: transformFeedbackDoubleBuffer.drawCount
+        });
+
+        transformFeedbackDoubleBuffer.swap();
+
+        geometry.setBuffer(
+            "instancePosition",
+            transformFeedbackDoubleBuffer.read.vertexArrayObject.findBuffer("position")
+        );
+
         const cameraLookAtPosition = new Vector3(0, 0, 0);
         const cameraWorldMatrix = Matrix4.getLookAtMatrix(
             targetCameraPosition,
@@ -530,8 +517,6 @@ void main() {}
             true
         );
         uniforms.uViewMatrix.value = cameraWorldMatrix.invert();
-
-        gpu.clear(0, 0, 0, 1);
 
         gpu.setVertexArrayObject(geometry);
         gpu.setShader(shader);

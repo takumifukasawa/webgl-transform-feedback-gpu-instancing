@@ -19,6 +19,24 @@ export class VertexArrayObject extends GLObject {
     getBuffers() {
         return this.#vboList.map(({ name, vbo }) => ({ name, buffer: vbo }));
     }
+    
+    setBuffer(name, newBuffer) {
+        const target = this.#vboList.find(elem => elem.name === name);
+        const gl = this.#gpu.gl;
+        target.buffer = newBuffer;
+        gl.bindVertexArray(this.#vao);
+        gl.bindBuffer(gl.ARRAY_BUFFER, newBuffer);
+        gl.enableVertexAttribArray(target.location);
+        gl.vertexAttribPointer(target.location, target.size, gl.FLOAT, false, 0, 0);
+        // if (target.divisor) {
+        //     gl.vertexAttribDivisor(target.location, target.divisor);
+        // }
+        gl.bindVertexArray(null);
+    }
+    
+    findBuffer(name) {
+        return this.#vboList.find(elem => elem.name === name).vbo;
+    }
 
     constructor({gpu, attributes, indices = null}) {
         super();

@@ -14,7 +14,7 @@ export class GPU {
     gl;
     #shader;
     #vao;
-    #uniforms;
+    #uniforms = {};
 
     constructor({gl}) {
         this.gl = gl;
@@ -83,19 +83,13 @@ export class GPU {
         if (this.#uniforms) {
             Object.keys(this.#uniforms).forEach(uniformName => {
                 const uniform = this.#uniforms[uniformName];
-                if (uniform.type === UniformTypes.Struct) {
-                    Object.keys(uniform.value).forEach(key => {
-                        setUniformValueInternal(uniform.value[key].type, `${uniformName}.${key}`, uniform.value[key].value)
-                    });
-                } else {
-                    setUniformValueInternal(uniform.type, uniformName, uniform.value);
-                }
+                setUniformValueInternal(uniform.type, uniformName, uniform.value);
             });
         }
     }
 
     updateTransformFeedback({shader, uniforms, transformFeedback, vertexArrayObject, drawCount}) {
-        this.uniforms = uniforms;
+        this.#uniforms = uniforms;
         this.shader = shader;
         this.vao = vertexArrayObject;
 
