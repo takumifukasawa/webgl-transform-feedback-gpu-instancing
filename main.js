@@ -4,9 +4,11 @@ import {Vector3} from "./js/Vector3.js";
 import {GPU} from "./js/GPU.js";
 import {VertexArrayObject} from "./js/VertexArrayObject.js";
 import {Shader} from "./js/Shader.js";
-import {TransformFeedbackBuffer} from "./js/TransformFeedbackBuffer.js";
-import {TransformFeedbackDoubleBuffer} from "./js/TransformFeedbackDoubleBuffer.js";
+// import {TransformFeedbackDoubleBuffer} from "./js/TransformFeedbackDoubleBuffer.js";
 // import {TransformFeedback} from "./js/TransformFeedback.js";
+import {GLObject} from "./js/GLObject.js";
+// import {Shader} from "./js/Shader.js";
+import {TransformFeedback} from "./js/TransformFeedback.js";
 
 const wrapperElement = document.getElementById("js-wrapper")
 const canvasElement = document.getElementById("js-canvas");
@@ -16,9 +18,170 @@ const gl = canvasElement.getContext("webgl2", {antialias: false});
 
 const gpu = new GPU({gl});
 
+
+export class TransformFeedbackDoubleBuffer extends GLObject {
+    shader;
+    uniforms;
+    buffers;
+    drawCount;
+
+    get read() {
+        const buffer = this.buffers[0];
+        return {
+            vertexArrayObject: buffer.srcVertexArrayObject,
+            transformFeedback: buffer.transformFeedback,
+        }
+    }
+
+    get write() {
+        const buffer = this.buffers[0];
+        return {
+            vertexArrayObject: buffer.srcVertexArrayObject,
+            transformFeedback: buffer.transformFeedback,
+        }
+    }
+
+    constructor({gpu, attributes, varyings, vertexShader, fragmentShader, uniforms, drawCount}) {
+        super();
+
+        const gl = gpu.gl;
+
+        const transformFeedbackVaryings = varyings.map(({name}) => name);
+
+        this.shader = createShader(gl, vertexShader, fragmentShader, transformFeedbackVaryings);
+        this.uniforms = uniforms;
+        this.drawCount = drawCount;
+
+        attributes.forEach((attribute, i) => {
+            attribute.location = i;
+            attribute.divisor = 0;
+        });
+
+        const attributes1 = attributes;
+        const attributes2 = attributes.map(attribute => ({...attribute}));
+
+        const vertexArrayObject1 = new VertexArrayObject({
+            gpu,
+            attributes: attributes1,
+        });
+        const vertexArrayObject2 = new VertexArrayObject({
+            gpu,
+            attributes: attributes2,
+        });
+
+        // console.log(attributes1, attributes2, vertexArrayObject1.getBuffers(), vertexArrayObject2.getBuffers())
+
+        // const outputBuffers1 = varyings.map(({name, data}) => {
+        //     const buffer = gl.createBuffer();
+        //     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+        //     gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
+        //     gl.bindBuffer(gl.ARRAY_BUFFER, null);
+        //     return {name, buffer};
+        // });
+
+        // const outputBuffers2 = varyings.map(({name, data}) => {
+        //     const buffer = gl.createBuffer();
+        //     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+        //     gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
+        //     gl.bindBuffer(gl.ARRAY_BUFFER, null);
+        //     return {name, buffer};
+        // });
+
+        const transformFeedback1 = new TransformFeedback({
+            gpu,
+            buffers: vertexArrayObject1.getBuffers()
+            // buffers: outputBuffers1
+        });
+        const transformFeedback2 = new TransformFeedback({
+            gpu,
+            buffers: vertexArrayObject2.getBuffers()
+            // buffers: outputBuffers2
+        });
+
+        this.buffers = [
+            {
+                attributes: attributes1,
+                srcVertexArrayObject: vertexArrayObject1,
+                transformFeedback: transformFeedback2,
+                outputVertexArrayObject: vertexArrayObject2,
+            },
+            {
+                attributes: attributes2,
+                srcVertexArrayObject: vertexArrayObject2,
+                transformFeedback: transformFeedback1,
+                outputVertexArrayObject: vertexArrayObject1,
+            },
+        ];
+    }
+
+    swap() {
+        this.buffers.reverse();
+    }
+}
+
+
 // ----------------------------------------------------------------------------------
 // functions
 // ----------------------------------------------------------------------------------
+
+function createShader (gl, vertexShader, fragmentShader, transformFeedbackVaryings) {
+    // vertex shader
+
+    // create vertex shader  
+    const vs = gl.createShader(gl.VERTEX_SHADER);
+    // set shader source (string)
+    gl.shaderSource(vs, vertexShader);
+    // compile vertex shader
+    gl.compileShader(vs);
+    // check shader info log
+    const vsInfo = gl.getShaderInfoLog(vs);
+    if (vsInfo.length > 0) {
+        const errorInfo = Shader.buildErrorInfo(vsInfo, vertexShader, "[Shader] vertex shader has error");
+        throw errorInfo;
+    }
+
+    // fragment shader
+
+    // create fragment shader  
+    const fs = gl.createShader(gl.FRAGMENT_SHADER);
+    // set shader source (string)
+    gl.shaderSource(fs, fragmentShader);
+    // compile fragment shader
+    gl.compileShader(fs);
+    const fsInfo = gl.getShaderInfoLog(fs);
+    // check shader info log
+    if (fsInfo.length > 0) {
+        const errorInfo = Shader.buildErrorInfo(fsInfo, fragmentShader, "[Shader] fragment shader has error");
+        throw errorInfo;
+    }
+
+    // program object
+
+    const program = gl.createProgram();
+
+    // attach shaders
+    gl.attachShader(program, vs);
+    gl.attachShader(program, fs);
+
+    if (transformFeedbackVaryings && transformFeedbackVaryings.length > 0) {
+        gl.transformFeedbackVaryings(
+            program,
+            transformFeedbackVaryings,
+            gl.SEPARATE_ATTRIBS // or INTERLEAVED_ATTRIBS
+        );
+    }
+
+    // program link to gl context
+    gl.linkProgram(program);
+
+    // check program info log
+    const programInfo = gl.getProgramInfoLog(program);
+    if (programInfo.length > 0) {
+        throw programInfo;
+    }
+
+    return program;
+}
 
 const createBoxGeometry = () => {
     // -----------------------------
@@ -99,10 +262,10 @@ const createBoxGeometry = () => {
 }
 
 
-const createShader = () => {
-    return new Shader({
-        gpu,
-        vertexShader: `#version 300 es
+const createBoxShader = () => {
+    return createShader(
+        gpu.gl,
+        `#version 300 es
     
 layout (location = 0) in vec3 aPosition;   
 layout (location = 1) in vec3 aNormal;   
@@ -129,7 +292,7 @@ void main() {
     gl_Position = uProjectionMatrix * uViewMatrix * worldPosition;
 }
     `,
-        fragmentShader: `#version 300 es
+        `#version 300 es
 precision mediump float;
 in vec3 vNormal;
 in vec4 vWorldPosition;
@@ -142,188 +305,12 @@ void main() {
     outColor = vec4(vec3(diffuse) * vColor, 1.);
 }
     `
-    });
+    );
 }
 
 // ----------------------------------------------------------------------------------
 // main
 // ----------------------------------------------------------------------------------
-
-const updateTransformFeedbackBuffer = ({shader, uniforms, transformFeedback, vertexArrayObject, drwaCount}) => {
-
-}
-
-const transformFeedbackBufferDebugger = () => {
-
-    //
-    // single buffer
-    // 
-
-    console.log("===== transform feedback single buffer =====");
-
-    const transformFeedbackBuffer = new TransformFeedbackBuffer({
-        gpu,
-        vertexShader: `#version 300 es
-
-precision mediump float;
-
-layout (location = 0) in vec3 srcX;
-layout (location = 1) in vec3 srcY;
-
-out vec3 resultA;
-out vec3 resultB;
-
-void main() {
-    resultA = srcX + srcY;
-    resultB = srcX * srcY;
-}
-        `,
-        fragmentShader: `#version 300 es
-        
-precision mediump float;        
-
-void main() {}
-        `,
-        attributes: [
-            {
-                name: 'srcX',
-                data: new Float32Array([0, 1, 2, 3, 4, 5]),
-                size: 3,
-                usage: gl.DYNAMIC_DRAW,
-            },
-            {
-                name: 'srcY',
-                data: new Float32Array([6, 7, 8, 9, 10, 11]),
-                size: 3,
-                usage: gl.DYNAMIC_DRAW,
-            },
-        ],
-        varyings: [
-            {
-                name: 'resultA',
-                data: new Float32Array([0, 0, 0, 0, 0, 0]),
-                size: 3
-            },
-            {
-                name: 'resultB',
-                data: new Float32Array([0, 0, 0, 0, 0, 0]),
-                size: 3
-            }
-        ],
-        uniforms: {},
-        drawCount: 2
-    });
-    gpu.updateTransformFeedback({
-        shader: transformFeedbackBuffer.shader,
-        uniforms: transformFeedbackBuffer.uniforms,
-        transformFeedback: transformFeedbackBuffer.transformFeedback,
-        vertexArrayObject: transformFeedbackBuffer.vertexArrayObject,
-        drawCount: transformFeedbackBuffer.drawCount
-    });
-    transformFeedbackBuffer.transformFeedback.buffers.forEach(({buffer}) => {
-        const results = new Float32Array(3 * 2);
-        gpu.gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-        gl.getBufferSubData(gl.ARRAY_BUFFER, 0, results);
-        gpu.gl.bindBuffer(gl.ARRAY_BUFFER, null);
-        console.log(results);
-    });
-
-    //
-    // double buffer
-    // 
-
-    console.log("===== transform feedback double buffer =====");
-
-    const transformFeedbackDoubleBuffer = new TransformFeedbackDoubleBuffer({
-        gpu,
-        vertexShader: `#version 300 es
-
-precision mediump float;
-
-layout (location = 0) in vec3 srcX;
-layout (location = 1) in vec3 srcY;
-
-out vec3 resultA;
-out vec3 resultB;
-
-void main() {
-    resultA = srcX + srcY;
-    resultB = srcX * srcY;
-}
-        `,
-        fragmentShader: `#version 300 es
-        
-precision mediump float;        
-
-void main() {}
-        `,
-        attributes: [
-            {
-                name: 'srcX',
-                data: new Float32Array([0, 1, 2, 3, 4, 5]),
-                size: 3,
-                usage: gl.DYNAMIC_DRAW,
-            },
-            {
-                name: 'srcY',
-                data: new Float32Array([6, 7, 8, 9, 10, 11]),
-                size: 3,
-                usage: gl.DYNAMIC_DRAW,
-            },
-        ],
-        varyings: [
-            {
-                name: 'resultA',
-                // data: new Float32Array([0, 0, 0, 0, 0, 0]),
-                // size: 3
-            },
-            {
-                name: 'resultB',
-                // data: new Float32Array([0, 0, 0, 0, 0, 0]),
-                // size: 3
-            }
-        ],
-        uniforms: {},
-        drawCount: 2
-    });
-
-    console.log("===== transform feedback double buffer: update 1 =====");
-
-    gpu.updateTransformFeedback({
-        shader: transformFeedbackDoubleBuffer.shader,
-        uniforms: transformFeedbackDoubleBuffer.uniforms,
-        transformFeedback: transformFeedbackDoubleBuffer.write.transformFeedback,
-        vertexArrayObject: transformFeedbackDoubleBuffer.write.vertexArrayObject,
-        drawCount: transformFeedbackDoubleBuffer.drawCount
-    });
-    transformFeedbackDoubleBuffer.read.transformFeedback.buffers.forEach(({name, buffer}) => {
-        const results = new Float32Array(3 * 2);
-        gpu.gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-        gl.getBufferSubData(gl.ARRAY_BUFFER, 0, results);
-        gpu.gl.bindBuffer(gl.ARRAY_BUFFER, null);
-        console.log(results);
-    });
-
-    transformFeedbackDoubleBuffer.swap();
-
-    console.log("===== transform feedback double buffer: update 2 =====");
-
-    gpu.updateTransformFeedback({
-        shader: transformFeedbackDoubleBuffer.shader,
-        uniforms: transformFeedbackDoubleBuffer.uniforms,
-        transformFeedback: transformFeedbackDoubleBuffer.write.transformFeedback,
-        vertexArrayObject: transformFeedbackDoubleBuffer.write.vertexArrayObject,
-        drawCount: transformFeedbackDoubleBuffer.drawCount
-    });
-    transformFeedbackDoubleBuffer.read.transformFeedback.buffers.forEach(({name, buffer}) => {
-        const results = new Float32Array(3 * 2);
-        gpu.gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-        gl.getBufferSubData(gl.ARRAY_BUFFER, 0, results);
-        gpu.gl.bindBuffer(gl.ARRAY_BUFFER, null);
-        console.log(results);
-    });
-
-}
 
 const main = () => {
     const targetCameraPosition = new Vector3(0, 0, 8);
@@ -332,8 +319,6 @@ const main = () => {
     let height;
 
     const instanceCount = 2;
-
-    // transformFeedbackBufferDebugger()
 
     const transformFeedbackDoubleBuffer = new TransformFeedbackDoubleBuffer({
         gpu,
@@ -363,11 +348,11 @@ void main() {}
                 name: 'position',
                 // data: new Float32Array(new Array(instanceCount * 3).fill(0)),
                 data: new Float32Array(new Array(instanceCount).fill(0).map(i => {
-                   return [
-                       Math.random() * 2 - 1,
-                       Math.random() * 2 - 1,
-                       Math.random() * 2 - 1,
-                   ]
+                    return [
+                        Math.random() * 2 - 1,
+                        Math.random() * 2 - 1,
+                        Math.random() * 2 - 1,
+                    ]
                 }).flat()),
                 size: 3,
                 usage: gl.DYNAMIC_DRAW,
@@ -430,7 +415,7 @@ void main() {}
             },
             {
                 name: 'instancePosition',
-                data: new Float32Array([0, 0, 0, 1, 1, 0]),
+                data: new Float32Array(new Array(instanceCount * 3).fill(0)),
                 size: 3,
                 location: 2,
                 divisor: 1,
@@ -448,7 +433,7 @@ void main() {}
         indices: boxGeometryData.indices
     });
 
-    const shader = createShader();
+    const shader = createBoxShader();
 
     const uniforms = {
         uProjectionMatrix: {

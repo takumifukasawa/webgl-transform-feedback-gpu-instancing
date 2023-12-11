@@ -12,7 +12,7 @@ const createWhite1x1 = () => {
 
 export class GPU {
     gl;
-    #shader;
+    shader;
     #vao;
     #uniforms = {};
 
@@ -21,7 +21,7 @@ export class GPU {
     }
 
     setShader(shader) {
-        this.#shader = shader;
+        this.shader = shader;
     }
 
     setVertexArrayObject(vao) {
@@ -53,7 +53,7 @@ export class GPU {
         const gl = this.gl;
 
         const setUniformValueInternal = (type, uniformName, value) => {
-            const location = gl.getUniformLocation(this.#shader.glObject, uniformName);
+            const location = gl.getUniformLocation(this.shader, uniformName);
             switch (type) {
                 case UniformTypes.Int:
                     gl.uniform1i(location, value);
@@ -97,7 +97,7 @@ export class GPU {
 
         gl.bindVertexArray(this.vao.glObject);
 
-        gl.useProgram(this.shader.glObject);
+        gl.useProgram(this.shader);
 
         this.setUniformValues();
 
@@ -138,7 +138,7 @@ export class GPU {
         // blend
         gl.disable(gl.BLEND);
 
-        gl.useProgram(this.#shader.glObject);
+        gl.useProgram(this.shader);
 
         this.setUniformValues();
 
