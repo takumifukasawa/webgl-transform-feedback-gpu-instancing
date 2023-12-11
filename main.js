@@ -274,13 +274,13 @@ void main() {}
         varyings: [
             {
                 name: 'resultA',
-                data: new Float32Array([0, 0, 0, 0, 0, 0]),
-                size: 3
+                // data: new Float32Array([0, 0, 0, 0, 0, 0]),
+                // size: 3
             },
             {
                 name: 'resultB',
-                data: new Float32Array([0, 0, 0, 0, 0, 0]),
-                size: 3
+                // data: new Float32Array([0, 0, 0, 0, 0, 0]),
+                // size: 3
             }
         ],
         uniforms: {},
@@ -330,16 +330,107 @@ const main = () => {
 
     let width;
     let height;
+
+    const instanceCount = 2;
     
     transformFeedbackBufferDebugger()
+    
+    console.log("===== transform feedback double buffer =====");
 
+    const transformFeedbackDoubleBuffer = new TransformFeedbackDoubleBuffer({
+        gpu,
+        vertexShader: `#version 300 es
+
+precision mediump float;
+
+layout (location = 0) in vec3 aPosition;
+layout (location = 1) in vec3 aVelocity;
+
+out vec3 vPosition;
+out vec3 vVelocity;
+
+void main() {
+    vPosition = aPosition + aVelocity;
+    vVelocity = vec3(.1, 0., 0.);
+}
+        `,
+        fragmentShader: `#version 300 es
+        
+precision mediump float;        
+
+void main() {}
+        `,
+        attributes: [
+            {
+                name: 'position',
+                data: new Float32Array(new Array(instanceCount * 3).fill(0)),
+                size: 3,
+                usage: gl.DYNAMIC_DRAW,
+            },
+            {
+                name: 'velocity',
+                data: new Float32Array(new Array(instanceCount * 3).fill(0)),
+                size: 3,
+                usage: gl.DYNAMIC_DRAW,
+            },
+        ],
+        varyings: [
+            {
+                name: 'vPosition',
+                // data: new Float32Array(new Array(instanceCount).fill(0)),
+                // size: 3
+            },
+            {
+                name: 'vVelocity',
+                // data: new Float32Array(new Array(instanceCount).fill(0)),
+                // size: 3
+            }
+        ],
+        uniforms: {},
+        drawCount: instanceCount
+    });
+
+    console.log("===== instances transform feedback double buffer: update 1 =====");
+
+    gpu.updateTransformFeedback({
+        shader: transformFeedbackDoubleBuffer.shader,
+        uniforms: transformFeedbackDoubleBuffer.uniforms,
+        transformFeedback: transformFeedbackDoubleBuffer.write.transformFeedback,
+        vertexArrayObject: transformFeedbackDoubleBuffer.write.vertexArrayObject,
+        drawCount: transformFeedbackDoubleBuffer.drawCount
+    });
+    transformFeedbackDoubleBuffer.read.transformFeedback.buffers.forEach(({name, buffer}) => {
+        const results = new Float32Array(3 * instanceCount);
+        gpu.gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+        gl.getBufferSubData(gl.ARRAY_BUFFER, 0, results);
+        gpu.gl.bindBuffer(gl.ARRAY_BUFFER, null);
+        console.log(results);
+    });
+    
+    transformFeedbackDoubleBuffer.swap();
+
+    console.log("===== instances transform feedback double buffer: update 2 =====");
+
+    gpu.updateTransformFeedback({
+        shader: transformFeedbackDoubleBuffer.shader,
+        uniforms: transformFeedbackDoubleBuffer.uniforms,
+        transformFeedback: transformFeedbackDoubleBuffer.write.transformFeedback,
+        vertexArrayObject: transformFeedbackDoubleBuffer.write.vertexArrayObject,
+        drawCount: transformFeedbackDoubleBuffer.drawCount
+    });
+    transformFeedbackDoubleBuffer.read.transformFeedback.buffers.forEach(({name, buffer}) => {
+        const results = new Float32Array(3 * instanceCount);
+        gpu.gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+        gl.getBufferSubData(gl.ARRAY_BUFFER, 0, results);
+        gpu.gl.bindBuffer(gl.ARRAY_BUFFER, null);
+        console.log(results);
+    });
+    
     //
     // draws
     // 
 
     const boxGeometryData = createBoxGeometry();
-
-    const instanceCount = 2;
 
     const boxGeometryColorData = new Float32Array(
         new Array(instanceCount)
