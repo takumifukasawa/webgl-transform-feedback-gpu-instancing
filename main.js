@@ -2,11 +2,7 @@ import {AttributeUsageTypes, UniformTypes, TextureTypes} from "./js/constants.js
 import {Matrix4} from "./js/Matrix4.js";
 import {Vector3} from "./js/Vector3.js";
 import {GPU} from "./js/GPU.js";
-// import {VertexArrayObject} from "./js/VertexArrayObject.js";
-import {Shader} from "./js/Shader.js";
 import {GLObject} from "./js/GLObject.js";
-import {TransformFeedback} from "./js/TransformFeedback.js";
-import {IndexBufferObject} from "./js/IndexBufferObject.js";
 
 const wrapperElement = document.getElementById("js-wrapper")
 const canvasElement = document.getElementById("js-canvas");
@@ -14,7 +10,39 @@ const gl = canvasElement.getContext("webgl2", {antialias: false});
 
 const gpu = new GPU({gl});
 
+const instanceCount = 2;
+
 // --------------------------------------------------------------------
+
+
+function buildErrorInfo(infoLog, shaderSource, header) {
+    return `[Shader] fragment shader has error
+            
+---
+
+${infoLog}
+
+---
+            
+${shaderSource.split("\n").map((line, i) => {
+        return `${i + 1}: ${line}`;
+    }).join("\n")}       
+`;
+}
+
+function createTransformFeedback(gl, buffers) {
+    const transformFeedback = gl.createTransformFeedback();
+    gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, transformFeedback);
+    for (let i = 0; i < buffers.length; i++) {
+        const buffer = buffers[i];
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+        gl.bindBufferBase(gl.TRANSFORM_FEEDBACK_BUFFER, i, buffer);
+        gl.bindBuffer(gl.ARRAY_BUFFER, null);
+    }
+    gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, null);
+
+    return transformFeedback;
+}
 
 export class VertexArrayObject extends GLObject {
     #vao;
@@ -32,7 +60,7 @@ export class VertexArrayObject extends GLObject {
     }
 
     getBuffers() {
-        return this.#vboList.map(({name, vbo}) => ({name, buffer: vbo}));
+        return this.#vboList.map(({ vbo }) => vbo);
     }
 
     setBuffer(name, newBuffer) {
@@ -99,7 +127,10 @@ export class VertexArrayObject extends GLObject {
         });
 
         if (indices) {
-            this.#ibo = new IndexBufferObject({gpu, indices})
+            this.#ibo = gl.createBuffer();
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.#ibo);
+            gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indices), gl.STATIC_DRAW);
+
             this.indices = indices;
         }
 
@@ -111,7 +142,7 @@ export class VertexArrayObject extends GLObject {
 
         // unbind index buffer
         if (this.#ibo) {
-            this.#ibo.unbind();
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
         }
     }
 }
@@ -242,16 +273,25 @@ export class TransformFeedbackDoubleBuffer extends GLObject {
             attributes: attributes2,
         });
 
-        const transformFeedback1 = new TransformFeedback({
-            gpu,
-            buffers: vertexArrayObject1.getBuffers()
-            // buffers: outputBuffers1
-        });
-        const transformFeedback2 = new TransformFeedback({
-            gpu,
-            buffers: vertexArrayObject2.getBuffers()
-            // buffers: outputBuffers2
-        });
+        // const transformFeedback1 = new TransformFeedback({
+        //     gpu,
+        //     buffers: vertexArrayObject1.getBuffers()
+        //     // buffers: outputBuffers1
+        // });
+        // const transformFeedback2 = new TransformFeedback({
+        //     gpu,
+        //     buffers: vertexArrayObject2.getBuffers()
+        //     // buffers: outputBuffers2
+        // });
+        const transformFeedback1 = createTransformFeedback(
+            gl,
+            vertexArrayObject1.getBuffers()
+        );
+        const transformFeedback2 = createTransformFeedback(
+            gl,
+            vertexArrayObject2.getBuffers()
+        );
+
 
         this.buffers = [
             {
@@ -291,7 +331,7 @@ function createShader(gl, vertexShader, fragmentShader, transformFeedbackVarying
     // check shader info log
     const vsInfo = gl.getShaderInfoLog(vs);
     if (vsInfo.length > 0) {
-        const errorInfo = Shader.buildErrorInfo(vsInfo, vertexShader, "[Shader] vertex shader has error");
+        const errorInfo = buildErrorInfo(vsInfo, vertexShader, "[Shader] vertex shader has error");
         throw errorInfo;
     }
 
@@ -306,7 +346,7 @@ function createShader(gl, vertexShader, fragmentShader, transformFeedbackVarying
     const fsInfo = gl.getShaderInfoLog(fs);
     // check shader info log
     if (fsInfo.length > 0) {
-        const errorInfo = Shader.buildErrorInfo(fsInfo, fragmentShader, "[Shader] fragment shader has error");
+        const errorInfo = buildErrorInfo(fsInfo, fragmentShader, "[Shader] fragment shader has error");
         throw errorInfo;
     }
 
@@ -472,8 +512,6 @@ const main = () => {
 
     let width;
     let height;
-
-    const instanceCount = 2;
 
     const transformFeedbackDoubleBuffer = new TransformFeedbackDoubleBuffer({
         gpu,

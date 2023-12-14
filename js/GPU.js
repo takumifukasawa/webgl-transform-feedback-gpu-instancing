@@ -103,7 +103,7 @@ export class GPU {
 
         gl.enable(gl.RASTERIZER_DISCARD);
 
-        gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, transformFeedback.glObject);
+        gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, transformFeedback);
         gl.beginTransformFeedback(gl.POINTS);
         gl.drawArrays(gl.POINTS, 0, drawCount);
         gl.endTransformFeedback();
