@@ -2,22 +2,195 @@ import {AttributeUsageTypes, UniformTypes, TextureTypes} from "./js/constants.js
 import {Matrix4} from "./js/Matrix4.js";
 import {Vector3} from "./js/Vector3.js";
 import {GPU} from "./js/GPU.js";
-import {VertexArrayObject} from "./js/VertexArrayObject.js";
+// import {VertexArrayObject} from "./js/VertexArrayObject.js";
 import {Shader} from "./js/Shader.js";
-// import {TransformFeedbackDoubleBuffer} from "./js/TransformFeedbackDoubleBuffer.js";
-// import {TransformFeedback} from "./js/TransformFeedback.js";
 import {GLObject} from "./js/GLObject.js";
-// import {Shader} from "./js/Shader.js";
 import {TransformFeedback} from "./js/TransformFeedback.js";
+import {IndexBufferObject} from "./js/IndexBufferObject.js";
 
 const wrapperElement = document.getElementById("js-wrapper")
 const canvasElement = document.getElementById("js-canvas");
 const gl = canvasElement.getContext("webgl2", {antialias: false});
 
-// const pixelRatio = Math.min(window.devicePixelRatio, 1.5);
-
 const gpu = new GPU({gl});
 
+// --------------------------------------------------------------------
+
+export class VertexArrayObject extends GLObject {
+    #vao;
+    #vboList;
+    #gpu;
+    #ibo;
+    indices;
+
+    get hasIndices() {
+        return !!this.#ibo;
+    }
+
+    get glObject() {
+        return this.#vao;
+    }
+
+    getBuffers() {
+        return this.#vboList.map(({name, vbo}) => ({name, buffer: vbo}));
+    }
+
+    setBuffer(name, newBuffer) {
+        const target = this.#vboList.find(elem => elem.name === name);
+        const gl = this.#gpu.gl;
+        target.buffer = newBuffer;
+        gl.bindVertexArray(this.#vao);
+        gl.bindBuffer(gl.ARRAY_BUFFER, newBuffer);
+        gl.enableVertexAttribArray(target.location);
+        gl.vertexAttribPointer(target.location, target.size, gl.FLOAT, false, 0, 0);
+        // if (target.divisor) {
+        //     gl.vertexAttribDivisor(target.location, target.divisor);
+        // }
+        gl.bindVertexArray(null);
+    }
+
+    findBuffer(name) {
+        return this.#vboList.find(elem => elem.name === name).vbo;
+    }
+
+    constructor({gpu, attributes, indices = null}) {
+        super();
+
+        this.#gpu = gpu;
+        this.#vboList = [];
+
+        const gl = this.#gpu.gl;
+        this.#vao = gl.createVertexArray();
+
+        // bind vertex array to webgl context
+        gl.bindVertexArray(this.#vao);
+
+        attributes.forEach(attribute => {
+            const {name, data, size, location, divisor, usage} = attribute;
+            const vbo = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+            gl.bufferData(gl.ARRAY_BUFFER, data, usage);
+            gl.enableVertexAttribArray(location);
+            // size ... 頂点ごとに埋める数
+            // stride is always 0 because buffer is not interleaved.
+            // ref:
+            // - https://developer.mozilla.org/ja/docs/Web/API/WebGLRenderingContext/vertexAttribPointer
+            // - https://developer.mozilla.org/en-US/docs/Web/API/WebGL2RenderingContext/vertexAttribIPointer
+            switch (data.constructor) {
+                case Float32Array:
+                    gl.vertexAttribPointer(location, size, gl.FLOAT, false, 0, 0);
+                    break;
+                case Uint16Array:
+                    gl.vertexAttribIPointer(location, size, gl.UNSIGNED_SHORT, 0, 0);
+                    break;
+            }
+            if (divisor) {
+                gl.vertexAttribDivisor(location, divisor);
+            }
+
+            this.#vboList.push({
+                name,
+                vbo,
+                usage,
+                location,
+                size,
+                divisor
+            });
+        });
+
+        if (indices) {
+            this.#ibo = new IndexBufferObject({gpu, indices})
+            this.indices = indices;
+        }
+
+        // unbind vertex array to webgl context
+        gl.bindVertexArray(null);
+
+        // unbind array buffer
+        gl.bindBuffer(gl.ARRAY_BUFFER, null);
+
+        // unbind index buffer
+        if (this.#ibo) {
+            this.#ibo.unbind();
+        }
+    }
+}
+
+// --------------------------------------------------------------------
+
+
+const transformFeedbackBufferVertexShader = `#version 300 es
+
+precision mediump float;
+
+layout (location = 0) in vec3 aPosition;
+layout (location = 1) in vec3 aVelocity;
+
+out vec3 vPosition;
+out vec3 vVelocity;
+
+void main() {
+    vPosition = aPosition + aVelocity;
+    vVelocity = vec3(.01, 0., 0.);
+}
+        `;
+const transformFeedbackFragmentShader = `#version 300 es
+        
+precision mediump float;        
+
+void main() {}
+        `;
+
+const transformFeedbackShader = createShader(
+    gl,
+    transformFeedbackBufferVertexShader,
+    transformFeedbackFragmentShader, [
+        'vPosition',
+        'vVelocity',
+    ]
+);
+
+const transformFeedbackUniforms = [];
+
+const transformFeedbackData = [
+    {
+        vertexArrayObject: new VertexArrayObject({
+            gpu: gpu,
+            attributes: [
+                {
+                    name: 'position',
+                    data: new Float32Array(new Array(instanceCount).fill(0).map(i => {
+                        return [
+                            Math.random() * 2 - 1,
+                            Math.random() * 2 - 1,
+                            Math.random() * 2 - 1,
+                        ]
+                    }).flat()),
+                    size: 3,
+                    location: 0,
+                    divisor: 0,
+                    usage: gl.DYNAMIC_DRAW,
+                },
+                {
+                    name: 'velocity',
+                    data: new Float32Array(new Array(instanceCount * 3).fill(0)),
+                    size: 3,
+                    location: 1,
+                    divisor: 0,
+                    usage: gl.DYNAMIC_DRAW,
+                }
+            ]
+        }),
+        transformFeedback: null,
+    },
+    {
+        vertexArrayObject: null,
+        transformFeedback: null,
+    }
+];
+
+let transformFeedbackDataIndexForRead = 0;
+let transformFeedbackDataIndexForWrite = 1;
 
 export class TransformFeedbackDoubleBuffer extends GLObject {
     shader;
@@ -69,24 +242,6 @@ export class TransformFeedbackDoubleBuffer extends GLObject {
             attributes: attributes2,
         });
 
-        // console.log(attributes1, attributes2, vertexArrayObject1.getBuffers(), vertexArrayObject2.getBuffers())
-
-        // const outputBuffers1 = varyings.map(({name, data}) => {
-        //     const buffer = gl.createBuffer();
-        //     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-        //     gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
-        //     gl.bindBuffer(gl.ARRAY_BUFFER, null);
-        //     return {name, buffer};
-        // });
-
-        // const outputBuffers2 = varyings.map(({name, data}) => {
-        //     const buffer = gl.createBuffer();
-        //     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-        //     gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
-        //     gl.bindBuffer(gl.ARRAY_BUFFER, null);
-        //     return {name, buffer};
-        // });
-
         const transformFeedback1 = new TransformFeedback({
             gpu,
             buffers: vertexArrayObject1.getBuffers()
@@ -124,7 +279,7 @@ export class TransformFeedbackDoubleBuffer extends GLObject {
 // functions
 // ----------------------------------------------------------------------------------
 
-function createShader (gl, vertexShader, fragmentShader, transformFeedbackVaryings) {
+function createShader(gl, vertexShader, fragmentShader, transformFeedbackVaryings) {
     // vertex shader
 
     // create vertex shader  
