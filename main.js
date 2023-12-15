@@ -59,8 +59,6 @@ function createVertexArrayObject(gl, attributes, indicesData) {
 
     gl.bindVertexArray(vao);
 
-    gl.bindVertexArray(null);
-
     const getBuffers = () => {
         return vboList.map(({vbo}) => vbo);
     }
@@ -119,12 +117,8 @@ function createVertexArrayObject(gl, attributes, indicesData) {
         ibo = gl.createBuffer();
         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
         gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indicesData), gl.STATIC_DRAW);
-
         indices = indicesData;
     }
-
-    // unbind vertex array to webgl context
-    gl.bindVertexArray(null);
 
     // unbind array buffer
     gl.bindBuffer(gl.ARRAY_BUFFER, null);
@@ -133,11 +127,17 @@ function createVertexArrayObject(gl, attributes, indicesData) {
     if (ibo) {
         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
     }
-    
+
+    // unbind vertex array to webgl context
+    gl.bindVertexArray(null);
+
     return {
         indices,
         vao,
-        ibo
+        ibo,
+        getBuffers,
+        setBuffer,
+        findBuffer
     }
 }
 
@@ -287,14 +287,14 @@ export class TransformFeedbackDoubleBuffer extends GLObject {
         const attributes1 = attributes;
         const attributes2 = attributes.map(attribute => ({...attribute}));
 
-        const vertexArrayObject1 = new VertexArrayObject({
-            gpu,
-            attributes: attributes1,
-        });
-        const vertexArrayObject2 = new VertexArrayObject({
-            gpu,
-            attributes: attributes2,
-        });
+        const vertexArrayObject1 = createVertexArrayObject(
+            gl,
+            attributes1,
+        );
+        const vertexArrayObject2 = createVertexArrayObject(
+            gl,
+            attributes2,
+        );
 
         // const transformFeedback1 = new TransformFeedback({
         //     gpu,
@@ -612,9 +612,9 @@ void main() {}
             .flat()
     );
 
-    const geometry = new VertexArrayObject({
-        gpu,
-        attributes: [
+    const geometry = createVertexArrayObject(
+        gl,
+        [
             {
                 name: 'position',
                 data: new Float32Array(boxGeometryData.positions),
@@ -646,8 +646,8 @@ void main() {}
                 usage: gl.STATIC_DRAW
             },
         ],
-        indices: boxGeometryData.indices
-    });
+        boxGeometryData.indices
+    );
 
     const shader = createBoxShader();
 
@@ -699,7 +699,7 @@ void main() {}
             shader: transformFeedbackDoubleBuffer.shader,
             uniforms: transformFeedbackDoubleBuffer.uniforms,
             transformFeedback: transformFeedbackDoubleBuffer.write.transformFeedback,
-            vertexArrayObject: transformFeedbackDoubleBuffer.write.vertexArrayObject,
+            vertexArrayObject: transformFeedbackDoubleBuffer.write.vertexArrayObject.vao,
             drawCount: transformFeedbackDoubleBuffer.drawCount
         });
 

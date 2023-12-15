@@ -14,6 +14,7 @@ export class GPU {
     gl;
     shader;
     #vao;
+    indices;
     #uniforms = {};
 
     constructor({gl}) {
@@ -27,7 +28,7 @@ export class GPU {
     setVertexArrayObject(vao) {
         this.#vao = vao;
     }
-
+    
     setUniforms(uniforms) {
         this.#uniforms = uniforms;
     }
@@ -95,7 +96,7 @@ export class GPU {
 
         const gl = this.gl;
 
-        gl.bindVertexArray(this.vao.glObject);
+        gl.bindVertexArray(this.vao.vao);
 
         gl.useProgram(this.shader);
 
@@ -142,15 +143,16 @@ export class GPU {
 
         this.setUniformValues();
 
+        // console.log(this.#vao)
         // set vertex
-        gl.bindVertexArray(this.#vao.glObject);
+        gl.bindVertexArray(this.#vao.vao);
 
         // プリミティブは三角形に固定
         const glPrimitiveType = gl.TRIANGLES;
         // const glPrimitiveType = gl.LINES;
 
         // draw
-        if (this.#vao.hasIndices) {
+        if (this.#vao.ibo) {
             // draw by indices
             // drawCount ... use indices count
             // gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.#ibo.glObject);
