@@ -1,37 +1,16 @@
-﻿import {PrimitiveTypes, UniformTypes} from "./constants.js";
-
-const createWhite1x1 = () => {
-    const canvas = document.createElement("canvas");
-    const ctx = canvas.getContext("2d");
-    canvas.width = 1;
-    canvas.height = 1;
-    ctx.fillStyle = "white";
-    ctx.fillRect(0, 0, 1, 1);
-    return canvas;
-};
+﻿import {UniformTypes} from "./constants.js";
 
 export class GPU {
     gl;
-    shader;
-    #vao;
-    indices;
-    #uniforms = {};
+    // #uniforms = {};
 
     constructor({gl}) {
         this.gl = gl;
     }
 
-    setShader(shader) {
-        this.shader = shader;
-    }
-
-    setVertexArrayObject(vao) {
-        this.#vao = vao;
-    }
-    
-    setUniforms(uniforms) {
-        this.#uniforms = uniforms;
-    }
+    // setUniforms(uniforms) {
+    //     this.#uniforms = uniforms;
+    // }
 
     setSize(x, y, width, height) {
         this.gl.viewport(x, y, width, height);
@@ -50,11 +29,10 @@ export class GPU {
         gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     }
 
-    setUniformValues() {
-        const gl = this.gl;
+    setUniformValues(gl, shader, uniforms = {}) {
 
         const setUniformValueInternal = (type, uniformName, value) => {
-            const location = gl.getUniformLocation(this.shader, uniformName);
+            const location = gl.getUniformLocation(shader, uniformName);
             switch (type) {
                 case UniformTypes.Int:
                     gl.uniform1i(location, value);
@@ -81,24 +59,22 @@ export class GPU {
         };
 
         // uniforms
-        if (this.#uniforms) {
-            Object.keys(this.#uniforms).forEach(uniformName => {
-                const uniform = this.#uniforms[uniformName];
+        // if (uniforms) {
+            Object.keys(uniforms).forEach(uniformName => {
+                const uniform = uniforms[uniformName];
                 setUniformValueInternal(uniform.type, uniformName, uniform.value);
             });
-        }
+        // }
     }
 
-    updateTransformFeedback({shader, uniforms, transformFeedback, vertexArrayObject, drawCount}) {
-        this.#uniforms = uniforms;
+    updateTransformFeedback(gl, {shader, uniforms, transformFeedback, vertexArrayObject, drawCount}) {
+        // this.#uniforms = uniforms;
 
-        const gl = this.gl;
-        
         gl.bindVertexArray(vertexArrayObject);
 
         gl.useProgram(shader);
 
-        this.setUniformValues();
+        this.setUniformValues(gl, shader, uniforms);
 
         gl.enable(gl.RASTERIZER_DISCARD);
 
@@ -113,13 +89,9 @@ export class GPU {
         gl.useProgram(null);
 
         gl.bindVertexArray(null);
-
-        this.#uniforms = {};
     }
 
-    draw({drawCount, instanceCount = 0, startOffset = 0}) {
-        const gl = this.gl;
-
+    draw(gl, shader, vao, uniforms, {hasIndices,  drawCount, instanceCount = 0, startOffset = 0}) {
         // culling
         gl.enable(gl.CULL_FACE);
         gl.cullFace(gl.BACK);
@@ -135,20 +107,17 @@ export class GPU {
         // blend
         gl.disable(gl.BLEND);
 
-        gl.useProgram(this.shader);
+        gl.useProgram(shader);
 
-        this.setUniformValues();
+        this.setUniformValues(gl, shader, uniforms);
 
-        // console.log(this.#vao)
-        // set vertex
-        gl.bindVertexArray(this.#vao.vao);
+        gl.bindVertexArray(vao);
 
         // プリミティブは三角形に固定
         const glPrimitiveType = gl.TRIANGLES;
-        // const glPrimitiveType = gl.LINES;
 
         // draw
-        if (this.#vao.ibo) {
+        if (hasIndices) {
             // draw by indices
             // drawCount ... use indices count
             // gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.#ibo.glObject);
