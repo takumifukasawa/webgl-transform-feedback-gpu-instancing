@@ -10,7 +10,7 @@ const gl = canvasElement.getContext("webgl2", {antialias: false});
 
 const gpu = new GPU({gl});
 
-const instanceCount = 2;
+const instanceCount = 3;
 
 // --------------------------------------------------------------------
 
@@ -35,7 +35,10 @@ function createTransformFeedback(gl, buffers) {
     gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, transformFeedback);
     for (let i = 0; i < buffers.length; i++) {
         const buffer = buffers[i];
+        const a = new Float32Array(new Array(instanceCount * 3).fill(0));
         gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+        gl.getBufferSubData(gl.ARRAY_BUFFER, 0, a);
+        // console.log(a)
         gl.bindBufferBase(gl.TRANSFORM_FEEDBACK_BUFFER, i, buffer);
         gl.bindBuffer(gl.ARRAY_BUFFER, null);
     }
@@ -102,6 +105,9 @@ function createVertexArrayObject(gl, attributes, indicesData) {
         if (divisor) {
             gl.vertexAttribDivisor(location, divisor);
         }
+        const a = new Float32Array(new Array(data.length).fill(0));
+        // gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+        gl.getBufferSubData(gl.ARRAY_BUFFER, 0, a);
 
         vboList.push({
             name,
@@ -120,16 +126,18 @@ function createVertexArrayObject(gl, attributes, indicesData) {
         indices = indicesData;
     }
 
+    console.log(vao, ibo)
+
     // unbind array buffer
     gl.bindBuffer(gl.ARRAY_BUFFER, null);
+
+    // unbind vertex array to webgl context
+    gl.bindVertexArray(null);
 
     // unbind index buffer
     if (ibo) {
         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
     }
-
-    // unbind vertex array to webgl context
-    gl.bindVertexArray(null);
 
     return {
         indices,
@@ -286,7 +294,7 @@ export class TransformFeedbackDoubleBuffer extends GLObject {
 
         const attributes1 = attributes;
         const attributes2 = attributes.map(attribute => ({...attribute}));
-
+        
         const vertexArrayObject1 = createVertexArrayObject(
             gl,
             attributes1,
@@ -295,7 +303,7 @@ export class TransformFeedbackDoubleBuffer extends GLObject {
             gl,
             attributes2,
         );
-
+       
         // const transformFeedback1 = new TransformFeedback({
         //     gpu,
         //     buffers: vertexArrayObject1.getBuffers()
@@ -318,12 +326,14 @@ export class TransformFeedbackDoubleBuffer extends GLObject {
 
         this.buffers = [
             {
+                name: "buffer1",
                 attributes: attributes1,
                 srcVertexArrayObject: vertexArrayObject1,
                 transformFeedback: transformFeedback2,
                 outputVertexArrayObject: vertexArrayObject2,
             },
             {
+                name: "buffer2",
                 attributes: attributes2,
                 srcVertexArrayObject: vertexArrayObject2,
                 transformFeedback: transformFeedback1,

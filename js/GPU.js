@@ -91,14 +91,12 @@ export class GPU {
 
     updateTransformFeedback({shader, uniforms, transformFeedback, vertexArrayObject, drawCount}) {
         this.#uniforms = uniforms;
-        this.shader = shader;
-        this.vao = vertexArrayObject;
 
         const gl = this.gl;
+        
+        gl.bindVertexArray(vertexArrayObject);
 
-        gl.bindVertexArray(this.vao.vao);
-
-        gl.useProgram(this.shader);
+        gl.useProgram(shader);
 
         this.setUniformValues();
 
@@ -116,9 +114,7 @@ export class GPU {
 
         gl.bindVertexArray(null);
 
-        this.shader = null;
-        this.uniforms = {};
-        this.vao = null;
+        this.#uniforms = {};
     }
 
     draw({drawCount, instanceCount = 0, startOffset = 0}) {
