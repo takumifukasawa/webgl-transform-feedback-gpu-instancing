@@ -2,7 +2,6 @@ import {AttributeUsageTypes, UniformTypes, TextureTypes} from "./js/constants.js
 import {Matrix4} from "./js/Matrix4.js";
 import {Vector3} from "./js/Vector3.js";
 import {GPU} from "./js/GPU.js";
-import {GLObject} from "./js/GLObject.js";
 
 const wrapperElement = document.getElementById("js-wrapper")
 const canvasElement = document.getElementById("js-canvas");
@@ -126,8 +125,6 @@ function createVertexArrayObject(gl, attributes, indicesData) {
         indices = indicesData;
     }
 
-    console.log(vao, ibo)
-
     // unbind array buffer
     gl.bindBuffer(gl.ARRAY_BUFFER, null);
 
@@ -151,38 +148,37 @@ function createVertexArrayObject(gl, attributes, indicesData) {
 
 // --------------------------------------------------------------------
 
-export class TransformFeedbackDoubleBuffer extends GLObject {
-    shader;
-    uniforms;
-    buffers;
-    drawCount;
-
-    get read() {
-        const buffer = this.buffers[0];
+function createTransformFeedbackDoubleBuffer(gl, vertexShader, fragmentShader, attributes, varyings, srcUniforms, count) {
+    let shader;
+    let uniforms;
+    let buffers = [];
+    let drawCount;
+    
+    const getRead = () => {
+        const buffer = buffers[0];
         return {
             vertexArrayObject: buffer.srcVertexArrayObject,
             transformFeedback: buffer.transformFeedback,
         }
     }
 
-    get write() {
-        const buffer = this.buffers[0];
+    const getWrite = () => {
+        const buffer = buffers[0];
         return {
             vertexArrayObject: buffer.srcVertexArrayObject,
             transformFeedback: buffer.transformFeedback,
         }
     }
 
-    constructor({gpu, attributes, varyings, vertexShader, fragmentShader, uniforms, drawCount}) {
-        super();
-
-        const gl = gpu.gl;
-
+    const swap = () => {
+        buffers.reverse();
+    }
+    
         const transformFeedbackVaryings = varyings.map(({name}) => name);
 
-        this.shader = createShader(gl, vertexShader, fragmentShader, transformFeedbackVaryings);
-        this.uniforms = uniforms;
-        this.drawCount = drawCount;
+        shader = createShader(gl, vertexShader, fragmentShader, transformFeedbackVaryings);
+        uniforms = srcUniforms;
+        drawCount = count;
 
         attributes.forEach((attribute, i) => {
             attribute.location = i;
@@ -221,7 +217,7 @@ export class TransformFeedbackDoubleBuffer extends GLObject {
         );
 
 
-        this.buffers = [
+        buffers = [
             {
                 name: "buffer1",
                 attributes: attributes1,
@@ -237,11 +233,14 @@ export class TransformFeedbackDoubleBuffer extends GLObject {
                 outputVertexArrayObject: vertexArrayObject1,
             },
         ];
-    }
-
-    swap() {
-        this.buffers.reverse();
-    }
+        
+        return {
+            getRead,
+            getWrite,
+            swap,
+            shader,
+            drawCount
+        }
 }
 
 
@@ -443,9 +442,9 @@ const main = () => {
     let width;
     let height;
 
-    const transformFeedbackDoubleBuffer = new TransformFeedbackDoubleBuffer({
-        gpu,
-        vertexShader: `#version 300 es
+    const transformFeedbackDoubleBuffer = createTransformFeedbackDoubleBuffer(
+        gl,
+        `#version 300 es
 
 precision mediump float;
 
@@ -460,13 +459,13 @@ void main() {
     vVelocity = vec3(.01, 0., 0.);
 }
         `,
-        fragmentShader: `#version 300 es
+        `#version 300 es
         
 precision mediump float;        
 
 void main() {}
         `,
-        attributes: [
+        [
             {
                 name: 'position',
                 // data: new Float32Array(new Array(instanceCount * 3).fill(0)),
@@ -487,7 +486,7 @@ void main() {}
                 usage: gl.DYNAMIC_DRAW,
             },
         ],
-        varyings: [
+        [
             {
                 name: 'vPosition',
                 // data: new Float32Array(new Array(instanceCount).fill(0)),
@@ -499,9 +498,9 @@ void main() {}
                 // size: 3
             }
         ],
-        uniforms: {},
-        drawCount: instanceCount
-    });
+        {},
+        instanceCount
+    );
 
 
     //
@@ -605,8 +604,8 @@ void main() {}
         gpu.updateTransformFeedback({
             shader: transformFeedbackDoubleBuffer.shader,
             uniforms: transformFeedbackDoubleBuffer.uniforms,
-            transformFeedback: transformFeedbackDoubleBuffer.write.transformFeedback,
-            vertexArrayObject: transformFeedbackDoubleBuffer.write.vertexArrayObject.vao,
+            transformFeedback: transformFeedbackDoubleBuffer.getWrite().transformFeedback,
+            vertexArrayObject: transformFeedbackDoubleBuffer.getWrite().vertexArrayObject.vao,
             drawCount: transformFeedbackDoubleBuffer.drawCount
         });
 
@@ -614,7 +613,7 @@ void main() {}
 
         geometry.setBuffer(
             "instancePosition",
-            transformFeedbackDoubleBuffer.read.vertexArrayObject.findBuffer("position")
+            transformFeedbackDoubleBuffer.getRead().vertexArrayObject.findBuffer("position")
         );
 
         const cameraLookAtPosition = new Vector3(0, 0, 0);
