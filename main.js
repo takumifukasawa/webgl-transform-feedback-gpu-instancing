@@ -3,11 +3,8 @@ import {Vector3} from "./js/Vector3.js";
 
 const UNIFORM_TYPES = {
     Matrix4: "Matrix4",
-    Matrix4Array: "Matrix4Array",
-    Texture: "Texture",
     Vector3: "Vector3",
     Float: "Float",
-    Int: "Int",
 };
 
 const wrapperElement = document.getElementById("js-wrapper")
@@ -19,31 +16,12 @@ const instanceCount = 3;
 
 // --------------------------------------------------------------------
 
-
-function buildErrorInfo(infoLog, shaderSource, header) {
-    return `[Shader] fragment shader has error
-            
----
-
-${infoLog}
-
----
-            
-${shaderSource.split("\n").map((line, i) => {
-        return `${i + 1}: ${line}`;
-    }).join("\n")}       
-`;
-}
-
 function createTransformFeedback(gl, buffers) {
     const transformFeedback = gl.createTransformFeedback();
     gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, transformFeedback);
     for (let i = 0; i < buffers.length; i++) {
         const buffer = buffers[i];
-        const a = new Float32Array(new Array(instanceCount * 3).fill(0));
         gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-        gl.getBufferSubData(gl.ARRAY_BUFFER, 0, a);
-        // console.log(a)
         gl.bindBufferBase(gl.TRANSFORM_FEEDBACK_BUFFER, i, buffer);
         gl.bindBuffer(gl.ARRAY_BUFFER, null);
     }
@@ -53,7 +31,9 @@ function createTransformFeedback(gl, buffers) {
 }
 
 
-function createVertexArrayObject(gl, attributes, indicesData) {
+function createVertexArrayObjectWrapper(gl, attributes, indicesData) {
+    const vao = gl.createVertexArray();
+
     // name,
     // vbo,
     // usage,
@@ -61,9 +41,9 @@ function createVertexArrayObject(gl, attributes, indicesData) {
     // size,
     // divisor
     const vboList = [];
+
     let indices = [];
     let ibo;
-    const vao = gl.createVertexArray();
 
     gl.bindVertexArray(vao);
 
@@ -78,6 +58,7 @@ function createVertexArrayObject(gl, attributes, indicesData) {
         gl.bindBuffer(gl.ARRAY_BUFFER, newBuffer);
         gl.enableVertexAttribArray(target.location);
         gl.vertexAttribPointer(target.location, target.size, gl.FLOAT, false, 0, 0);
+        // divisorは必要ない
         // if (target.divisor) {
         //     gl.vertexAttribDivisor(target.location, target.divisor);
         // }
@@ -157,10 +138,10 @@ function createVertexArrayObject(gl, attributes, indicesData) {
 function createTransformFeedbackDoubleBuffer(gl, vertexShader, fragmentShader, attributes, varyings, srcUniforms, count) {
     let shader;
     let uniforms;
-    let buffers = [];
+    const buffers = [];
     let drawCount;
 
-    const getRead = () => {
+    const getWrite = () => {
         const buffer = buffers[0];
         return {
             vertexArrayObject: buffer.srcVertexArrayObject,
@@ -168,7 +149,7 @@ function createTransformFeedbackDoubleBuffer(gl, vertexShader, fragmentShader, a
         }
     }
 
-    const getWrite = () => {
+    const getRead = () => {
         const buffer = buffers[0];
         return {
             vertexArrayObject: buffer.srcVertexArrayObject,
@@ -194,11 +175,11 @@ function createTransformFeedbackDoubleBuffer(gl, vertexShader, fragmentShader, a
     const attributes1 = attributes;
     const attributes2 = attributes.map(attribute => ({...attribute}));
 
-    const vertexArrayObject1 = createVertexArrayObject(
+    const vertexArrayObject1 = createVertexArrayObjectWrapper(
         gl,
         attributes1,
     );
-    const vertexArrayObject2 = createVertexArrayObject(
+    const vertexArrayObject2 = createVertexArrayObjectWrapper(
         gl,
         attributes2,
     );
@@ -212,40 +193,50 @@ function createTransformFeedbackDoubleBuffer(gl, vertexShader, fragmentShader, a
         vertexArrayObject2.getBuffers()
     );
 
-
-    buffers = [
-        {
-            name: "buffer1",
-            attributes: attributes1,
-            srcVertexArrayObject: vertexArrayObject1,
-            transformFeedback: transformFeedback2,
-            outputVertexArrayObject: vertexArrayObject2,
-        },
-        {
-            name: "buffer2",
-            attributes: attributes2,
-            srcVertexArrayObject: vertexArrayObject2,
-            transformFeedback: transformFeedback1,
-            outputVertexArrayObject: vertexArrayObject1,
-        },
-    ];
+    buffers.push({
+        name: "buffer1",
+        attributes: attributes1,
+        srcVertexArrayObject: vertexArrayObject1,
+        transformFeedback: transformFeedback2,
+        outputVertexArrayObject: vertexArrayObject2,
+    })
+    buffers.push({
+        name: "buffer2",
+        attributes: attributes2,
+        srcVertexArrayObject: vertexArrayObject2,
+        transformFeedback: transformFeedback1,
+        outputVertexArrayObject: vertexArrayObject1,
+    });
 
     return {
         getRead,
         getWrite,
         swap,
         shader,
+        uniforms,
         drawCount
     }
 }
 
-
-// ----------------------------------------------------------------------------------
-// functions
-// ----------------------------------------------------------------------------------
-
 function createShader(gl, vertexShader, fragmentShader, transformFeedbackVaryings) {
+    const buildErrorInfo = (infoLog, shaderSource, header) => {
+        return `[Shader] fragment shader has error
+            
+---
+
+${infoLog}
+
+---
+            
+${shaderSource.split("\n").map((line, i) => {
+            return `${i + 1}: ${line}`;
+        }).join("\n")}       
+`;
+    };
+
+    //
     // vertex shader
+    //
 
     // create vertex shader  
     const vs = gl.createShader(gl.VERTEX_SHADER);
@@ -260,7 +251,9 @@ function createShader(gl, vertexShader, fragmentShader, transformFeedbackVarying
         throw errorInfo;
     }
 
+    //
     // fragment shader
+    //
 
     // create fragment shader  
     const fs = gl.createShader(gl.FRAGMENT_SHADER);
@@ -275,7 +268,9 @@ function createShader(gl, vertexShader, fragmentShader, transformFeedbackVarying
         throw errorInfo;
     }
 
+    //
     // program object
+    //
 
     const program = gl.createProgram();
 
@@ -306,14 +301,11 @@ function createShader(gl, vertexShader, fragmentShader, transformFeedbackVarying
 function setUniformValues(gl, shader, uniforms = {}) {
     Object.keys(uniforms).forEach(uniformName => {
         const uniform = uniforms[uniformName];
-        
+
         const {type, value} = uniform;
 
         const location = gl.getUniformLocation(shader, uniformName);
         switch (type) {
-            case UNIFORM_TYPES.Int:
-                gl.uniform1i(location, value);
-                break;
             case UNIFORM_TYPES.Float:
                 gl.uniform1f(location, value);
                 break;
@@ -324,87 +316,13 @@ function setUniformValues(gl, shader, uniforms = {}) {
                 // arg[1] ... use transpose.
                 gl.uniformMatrix4fv(location, false, value.elements);
                 break;
-            case UNIFORM_TYPES.Matrix4Array:
-                if (value) {
-                    // arg[1] ... use transpose.
-                    gl.uniformMatrix4fv(location, false, value.map(v => [...v.elements]).flat());
-                }
-                break;
             default:
                 throw `invalid uniform - name: ${uniformName}, type: ${type}`;
         }
     });
 }
 
-function updateTransformFeedback(gl, {shader, uniforms, transformFeedback, vertexArrayObject, drawCount}) {
-    gl.bindVertexArray(vertexArrayObject);
-
-    gl.useProgram(shader);
-
-    setUniformValues(gl, shader, uniforms);
-
-    gl.enable(gl.RASTERIZER_DISCARD);
-
-    gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, transformFeedback);
-    gl.beginTransformFeedback(gl.POINTS);
-    gl.drawArrays(gl.POINTS, 0, drawCount);
-    gl.endTransformFeedback();
-    gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, null);
-
-    gl.disable(gl.RASTERIZER_DISCARD);
-
-    gl.useProgram(null);
-
-    gl.bindVertexArray(null);
-}
-
-function draw (gl, shader, vao, uniforms, {hasIndices,  drawCount, instanceCount = 0, startOffset = 0}) {
-    // culling
-    gl.enable(gl.CULL_FACE);
-    gl.cullFace(gl.BACK);
-    gl.frontFace(gl.CCW);
-
-    // depth write
-    gl.depthMask(true);
-
-    // depth test
-    gl.enable(gl.DEPTH_TEST);
-    gl.depthFunc(gl.LEQUAL);
-
-    // blend
-    gl.disable(gl.BLEND);
-
-    gl.useProgram(shader);
-
-    setUniformValues(gl, shader, uniforms);
-
-    gl.bindVertexArray(vao);
-
-    // プリミティブは三角形に固定
-    const glPrimitiveType = gl.TRIANGLES;
-
-    // draw
-    if (hasIndices) {
-        // draw by indices
-        // drawCount ... use indices count
-        // gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.#ibo.glObject);
-        if (instanceCount) {
-            gl.drawElementsInstanced(glPrimitiveType, drawCount, gl.UNSIGNED_SHORT, startOffset, instanceCount)
-        } else {
-            gl.drawElements(glPrimitiveType, drawCount, gl.UNSIGNED_SHORT, startOffset);
-        }
-    } else {
-        // draw by array
-        // draw count ... use vertex num
-        if (instanceCount) {
-            gl.drawArraysInstanced(glPrimitiveType, startOffset, drawCount, instanceCount);
-        } else {
-            gl.drawArrays(glPrimitiveType, startOffset, drawCount);
-        }
-    }
-}
-
-const createBoxGeometry = () => {
+function createBoxGeometry() {
     // -----------------------------
     //   6 ---- 4
     //  /|     /|
@@ -480,53 +398,6 @@ const createBoxGeometry = () => {
         normals,
         indices,
     };
-}
-
-
-const createBoxShader = () => {
-    return createShader(
-        gl,
-        `#version 300 es
-    
-layout (location = 0) in vec3 aPosition;   
-layout (location = 1) in vec3 aNormal;   
-layout (location = 2) in vec3 aInstancePosition;
-layout (location = 3) in vec3 aInstanceColor; 
-
-uniform mat4 uWorldMatrix;
-uniform mat4 uViewMatrix;
-uniform mat4 uProjectionMatrix;
-
-out vec3 vColor;
-out vec3 vNormal;
-out vec4 vWorldPosition;
-
-void main() {
-    vNormal = aNormal;
-    vColor = aInstanceColor;
-    
-    vec4 localPosition = vec4(aPosition, 1.);
-    localPosition.xyz += aInstancePosition;
-
-    // vec4 worldPosition = uWorldMatrix * vec4(aPosition, 1.); 
-    vec4 worldPosition = uWorldMatrix * localPosition; 
-    gl_Position = uProjectionMatrix * uViewMatrix * worldPosition;
-}
-    `,
-        `#version 300 es
-precision mediump float;
-in vec3 vNormal;
-in vec4 vWorldPosition;
-in vec3 vColor;
-out vec4 outColor;
-void main() {
-    vec3 lightDir = normalize(vec3(1., 1., 1.));
-    vec3 normal = normalize(vNormal);
-    float diffuse = (dot(lightDir, normal) + 1.) * .5;
-    outColor = vec4(vec3(diffuse) * vColor, 1.);
-}
-    `
-    );
 }
 
 // ----------------------------------------------------------------------------------
@@ -615,7 +486,7 @@ void main() {}
             .flat()
     );
 
-    const geometry = createVertexArrayObject(
+    const boxVertexArrayObject = createVertexArrayObjectWrapper(
         gl,
         [
             {
@@ -652,9 +523,51 @@ void main() {}
         boxGeometryData.indices
     );
 
-    const shader = createBoxShader();
+    const boxProgramObject = createShader(
+        gl,
+        `#version 300 es
+    
+layout (location = 0) in vec3 aPosition;   
+layout (location = 1) in vec3 aNormal;   
+layout (location = 2) in vec3 aInstancePosition;
+layout (location = 3) in vec3 aInstanceColor; 
 
-    const uniforms = {
+uniform mat4 uWorldMatrix;
+uniform mat4 uViewMatrix;
+uniform mat4 uProjectionMatrix;
+
+out vec3 vColor;
+out vec3 vNormal;
+out vec4 vWorldPosition;
+
+void main() {
+    vNormal = aNormal;
+    vColor = aInstanceColor;
+    
+    vec4 localPosition = vec4(aPosition, 1.);
+    localPosition.xyz += aInstancePosition;
+
+    // vec4 worldPosition = uWorldMatrix * vec4(aPosition, 1.); 
+    vec4 worldPosition = uWorldMatrix * localPosition; 
+    gl_Position = uProjectionMatrix * uViewMatrix * worldPosition;
+}
+    `,
+        `#version 300 es
+precision mediump float;
+in vec3 vNormal;
+in vec4 vWorldPosition;
+in vec3 vColor;
+out vec4 outColor;
+void main() {
+    vec3 lightDir = normalize(vec3(1., 1., 1.));
+    vec3 normal = normalize(vNormal);
+    float diffuse = (dot(lightDir, normal) + 1.) * .5;
+    outColor = vec4(vec3(diffuse) * vColor, 1.);
+}
+    `
+    );
+
+    const boxUniforms = {
         uProjectionMatrix: {
             type: UNIFORM_TYPES.Matrix4,
             value: Matrix4.identity()
@@ -692,31 +605,23 @@ void main() {}
         const near = 1;
         const far = 20;
         const projectionMatrix = Matrix4.getPerspectiveMatrix(fov * Math.PI / 180, aspect, near, far);
-        uniforms.uProjectionMatrix.value = projectionMatrix;
+        boxUniforms.uProjectionMatrix.value = projectionMatrix;
     };
 
     const tick = (time) => {
+        //
+        // clear
+        //
+
         gl.depthMask(true);
         gl.colorMask(true, true, true, true);
         gl.enable(gl.DEPTH_TEST);
         gl.clearColor(0, 0, 0, 1);
         gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-        
 
-        updateTransformFeedback(gl, {
-            shader: transformFeedbackDoubleBuffer.shader,
-            uniforms: transformFeedbackDoubleBuffer.uniforms,
-            transformFeedback: transformFeedbackDoubleBuffer.getWrite().transformFeedback,
-            vertexArrayObject: transformFeedbackDoubleBuffer.getWrite().vertexArrayObject.vao,
-            drawCount: transformFeedbackDoubleBuffer.drawCount
-        });
-
-        transformFeedbackDoubleBuffer.swap();
-
-        geometry.setBuffer(
-            "instancePosition",
-            transformFeedbackDoubleBuffer.getRead().vertexArrayObject.findBuffer("position")
-        );
+        //
+        // カメラ更新
+        //
 
         const cameraLookAtPosition = new Vector3(0, 0, 0);
         const cameraWorldMatrix = Matrix4.getLookAtMatrix(
@@ -725,10 +630,73 @@ void main() {}
             Vector3.up(),
             true
         );
-        uniforms.uViewMatrix.value = cameraWorldMatrix.invert();
+        boxUniforms.uViewMatrix.value = cameraWorldMatrix.invert();
 
-        const drawCount = geometry.indices.length;
-        draw(gl, shader, geometry.vao, uniforms, {drawCount, instanceCount, hasIndices: true});
+        //
+        // update transform feedback
+        //
+
+        // 書き込み用の transform feedback と vertex array object を取得
+        const writeBuffer = transformFeedbackDoubleBuffer.getWrite();
+
+        gl.bindVertexArray(writeBuffer.vertexArrayObject.vao);
+
+        gl.useProgram(transformFeedbackDoubleBuffer.shader);
+
+        setUniformValues(gl, transformFeedbackDoubleBuffer.shader, transformFeedbackDoubleBuffer.uniforms);
+
+        gl.enable(gl.RASTERIZER_DISCARD);
+
+        gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, writeBuffer.transformFeedback);
+        gl.beginTransformFeedback(gl.POINTS);
+        gl.drawArrays(gl.POINTS, 0, transformFeedbackDoubleBuffer.drawCount);
+        gl.endTransformFeedback();
+        gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, null);
+
+        gl.disable(gl.RASTERIZER_DISCARD);
+
+        gl.useProgram(null);
+
+        gl.bindVertexArray(null);
+
+        transformFeedbackDoubleBuffer.swap();
+
+        //
+        // transform feedback で更新したバッファを、描画するメッシュのバッファに割り当て
+        //
+
+        boxVertexArrayObject.setBuffer(
+            "instancePosition",
+            transformFeedbackDoubleBuffer.getRead().vertexArrayObject.findBuffer("position")
+        );
+
+        //
+        // 描画
+        //
+
+        const drawCount = boxVertexArrayObject.indices.length;
+
+        // culling
+        gl.enable(gl.CULL_FACE);
+        gl.cullFace(gl.BACK);
+        gl.frontFace(gl.CCW);
+
+        // depth write
+        gl.depthMask(true);
+
+        // depth test
+        gl.enable(gl.DEPTH_TEST);
+        gl.depthFunc(gl.LEQUAL);
+
+        gl.disable(gl.BLEND);
+
+        gl.useProgram(boxProgramObject);
+
+        setUniformValues(gl, boxProgramObject, boxUniforms);
+
+        gl.bindVertexArray(boxVertexArrayObject.vao);
+
+        gl.drawElementsInstanced(gl.TRIANGLES, drawCount, gl.UNSIGNED_SHORT, 0, instanceCount);
 
         gl.flush();
 
