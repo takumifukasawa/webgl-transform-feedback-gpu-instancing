@@ -40,7 +40,7 @@ function createVertexArrayObjectWrapper(gl, attributes, indicesData) {
     // location,
     // size,
     // divisor
-    const vboList = [];
+    const vertices = [];
 
     let indices = [];
     let ibo;
@@ -48,11 +48,11 @@ function createVertexArrayObjectWrapper(gl, attributes, indicesData) {
     gl.bindVertexArray(vao);
 
     const getBuffers = () => {
-        return vboList.map(({vbo}) => vbo);
+        return vertices.map(({vbo}) => vbo);
     }
 
     const setBuffer = (name, newBuffer) => {
-        const target = vboList.find(elem => elem.name === name);
+        const target = vertices.find(elem => elem.name === name);
         target.buffer = newBuffer;
         gl.bindVertexArray(vao);
         gl.bindBuffer(gl.ARRAY_BUFFER, newBuffer);
@@ -66,7 +66,7 @@ function createVertexArrayObjectWrapper(gl, attributes, indicesData) {
     }
 
     const findBuffer = (name) => {
-        return vboList.find(elem => elem.name === name).vbo;
+        return vertices.find(elem => elem.name === name).vbo;
     }
 
     attributes.forEach(attribute => {
@@ -95,7 +95,7 @@ function createVertexArrayObjectWrapper(gl, attributes, indicesData) {
         // gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
         gl.getBufferSubData(gl.ARRAY_BUFFER, 0, a);
 
-        vboList.push({
+        vertices.push({
             name,
             vbo,
             usage,
@@ -142,18 +142,17 @@ function createTransformFeedbackDoubleBuffer(gl, vertexShader, fragmentShader, a
     let drawCount;
 
     const getWrite = () => {
-        const buffer = buffers[0];
         return {
-            vertexArrayObject: buffer.srcVertexArrayObject,
-            transformFeedback: buffer.transformFeedback,
+            vertexArrayObjectWrapper: buffers[0].vertexArrayObjectWrapper,
+            transformFeedback: buffers[1].transformFeedback,
         }
     }
 
     const getRead = () => {
         const buffer = buffers[0];
         return {
-            vertexArrayObject: buffer.srcVertexArrayObject,
-            transformFeedback: buffer.transformFeedback,
+            vertexArrayObjectWrapper: buffers[1].vertexArrayObjectWrapper,
+            transformFeedback: buffers[0].transformFeedback,
         }
     }
 
@@ -175,37 +174,43 @@ function createTransformFeedbackDoubleBuffer(gl, vertexShader, fragmentShader, a
     const attributes1 = attributes;
     const attributes2 = attributes.map(attribute => ({...attribute}));
 
-    const vertexArrayObject1 = createVertexArrayObjectWrapper(
+    const vertexArrayObjectWrapper1 = createVertexArrayObjectWrapper(
         gl,
         attributes1,
     );
-    const vertexArrayObject2 = createVertexArrayObjectWrapper(
+    const vertexArrayObjectWrapper2 = createVertexArrayObjectWrapper(
         gl,
         attributes2,
     );
 
     const transformFeedback1 = createTransformFeedback(
         gl,
-        vertexArrayObject1.getBuffers()
+        vertexArrayObjectWrapper1.getBuffers()
     );
     const transformFeedback2 = createTransformFeedback(
         gl,
-        vertexArrayObject2.getBuffers()
+        vertexArrayObjectWrapper2.getBuffers()
     );
 
     buffers.push({
         name: "buffer1",
+        // attributes: attributes1,
+        // srcVertexArrayObject: vertexArrayObject1,
+        // transformFeedback: transformFeedback2,
+        // outputVertexArrayObject: vertexArrayObject2,
         attributes: attributes1,
-        srcVertexArrayObject: vertexArrayObject1,
-        transformFeedback: transformFeedback2,
-        outputVertexArrayObject: vertexArrayObject2,
+        vertexArrayObjectWrapper: vertexArrayObjectWrapper1,
+        transformFeedback: transformFeedback1,
     })
     buffers.push({
         name: "buffer2",
+        // attributes: attributes2,
+        // srcVertexArrayObject: vertexArrayObject2,
+        // transformFeedback: transformFeedback1,
+        // outputVertexArrayObject: vertexArrayObject1,
         attributes: attributes2,
-        srcVertexArrayObject: vertexArrayObject2,
-        transformFeedback: transformFeedback1,
-        outputVertexArrayObject: vertexArrayObject1,
+        vertexArrayObjectWrapper: vertexArrayObjectWrapper2,
+        transformFeedback: transformFeedback2,
     });
 
     return {
@@ -639,7 +644,7 @@ void main() {
         // 書き込み用の transform feedback と vertex array object を取得
         const writeBuffer = transformFeedbackDoubleBuffer.getWrite();
 
-        gl.bindVertexArray(writeBuffer.vertexArrayObject.vao);
+        gl.bindVertexArray(writeBuffer.vertexArrayObjectWrapper.vao);
 
         gl.useProgram(transformFeedbackDoubleBuffer.shader);
 
@@ -659,16 +664,14 @@ void main() {
 
         gl.bindVertexArray(null);
 
-        transformFeedbackDoubleBuffer.swap();
-
-        //
         // transform feedback で更新したバッファを、描画するメッシュのバッファに割り当て
-        //
-
         boxVertexArrayObject.setBuffer(
             "instancePosition",
-            transformFeedbackDoubleBuffer.getRead().vertexArrayObject.findBuffer("position")
+            transformFeedbackDoubleBuffer.getRead().vertexArrayObjectWrapper.findBuffer("position")
         );
+
+        // 書き込み/読み込みをしたのでswap
+        transformFeedbackDoubleBuffer.swap();
 
         //
         // 描画
