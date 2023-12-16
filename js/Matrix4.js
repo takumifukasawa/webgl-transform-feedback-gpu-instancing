@@ -147,10 +147,6 @@ export class Matrix4 {
         n10, n11, n12, n13,
         n20, n21, n22, n23,
         n30, n31, n32, n33,
-        // m00 = 0, m01 = 0, m02 = 0, m03 = 0,
-        // m10 = 0, m11 = 0, m12 = 0, m13 = 0,
-        // m20 = 0, m21 = 0, m22 = 0, m23 = 0,
-        // m30 = 0, m31 = 0, m32 = 0, m33 = 0,
     ) {
         this.set(
             n00, n01, n02, n03,
@@ -241,7 +237,6 @@ export class Matrix4 {
             0, 0, 1, 0,
             0, 0, 0, 1
         );
-        return;
     }
     
     static multiplyMatrices(...matrices) {
