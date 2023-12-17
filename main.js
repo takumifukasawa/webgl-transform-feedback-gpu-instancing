@@ -1,20 +1,94 @@
 import {Matrix4} from "./js/Matrix4.js";
 import {Vector3} from "./js/Vector3.js";
 
-const UNIFORM_TYPES = {
-    Matrix4: "Matrix4",
-    Vector3: "Vector3",
-    Float: "Float",
-};
-
 const wrapperElement = document.getElementById("js-wrapper")
 const canvasElement = document.getElementById("js-canvas");
 const gl = canvasElement.getContext("webgl2", {antialias: false});
 
-const instanceCount = 3;
+const instanceCount = 65536;
 
 
 // --------------------------------------------------------------------
+
+function createShader(gl, vertexShader, fragmentShader, transformFeedbackVaryings) {
+    const buildErrorInfo = (infoLog, shaderSource, header) => {
+        return `${header}
+            
+---
+
+${infoLog}
+
+---
+            
+${shaderSource.split("\n").map((line, i) => {
+            return `${i + 1}: ${line}`;
+        }).join("\n")}       
+`;
+    };
+
+    //
+    // vertex shader
+    //
+
+    // create vertex shader  
+    const vs = gl.createShader(gl.VERTEX_SHADER);
+    // set shader source (string)
+    gl.shaderSource(vs, vertexShader);
+    // compile vertex shader
+    gl.compileShader(vs);
+    // check shader info log
+    const vsInfo = gl.getShaderInfoLog(vs);
+    if (vsInfo.length > 0) {
+        const errorInfo = buildErrorInfo(vsInfo, vertexShader, "vertex shader has error");
+        throw errorInfo;
+    }
+
+    //
+    // fragment shader
+    //
+
+    // create fragment shader  
+    const fs = gl.createShader(gl.FRAGMENT_SHADER);
+    // set shader source (string)
+    gl.shaderSource(fs, fragmentShader);
+    // compile fragment shader
+    gl.compileShader(fs);
+    const fsInfo = gl.getShaderInfoLog(fs);
+    // check shader info log
+    if (fsInfo.length > 0) {
+        const errorInfo = buildErrorInfo(fsInfo, fragmentShader, "fragment shader has error");
+        throw errorInfo;
+    }
+
+    //
+    // program object
+    //
+
+    const program = gl.createProgram();
+
+    // attach shaders
+    gl.attachShader(program, vs);
+    gl.attachShader(program, fs);
+
+    if (transformFeedbackVaryings && transformFeedbackVaryings.length > 0) {
+        gl.transformFeedbackVaryings(
+            program,
+            transformFeedbackVaryings,
+            gl.SEPARATE_ATTRIBS // or INTERLEAVED_ATTRIBS
+        );
+    }
+
+    // program link to gl context
+    gl.linkProgram(program);
+
+    // check program info log
+    const programInfo = gl.getProgramInfoLog(program);
+    if (programInfo.length > 0) {
+        throw programInfo;
+    }
+
+    return program;
+}
 
 function createTransformFeedback(gl, buffers) {
     const transformFeedback = gl.createTransformFeedback();
@@ -33,6 +107,8 @@ function createTransformFeedback(gl, buffers) {
 
 function createVertexArrayObjectWrapper(gl, attributes, indicesData) {
     const vao = gl.createVertexArray();
+    let ibo;
+    let indices = null;
 
     // name,
     // vbo,
@@ -41,9 +117,6 @@ function createVertexArrayObjectWrapper(gl, attributes, indicesData) {
     // size,
     // divisor
     const vertices = [];
-
-    let indices = [];
-    let ibo;
 
     gl.bindVertexArray(vao);
 
@@ -80,20 +153,13 @@ function createVertexArrayObjectWrapper(gl, attributes, indicesData) {
         // ref:
         // - https://developer.mozilla.org/ja/docs/Web/API/WebGLRenderingContext/vertexAttribPointer
         // - https://developer.mozilla.org/en-US/docs/Web/API/WebGL2RenderingContext/vertexAttribIPointer
-        switch (data.constructor) {
-            case Float32Array:
-                gl.vertexAttribPointer(location, size, gl.FLOAT, false, 0, 0);
-                break;
-            case Uint16Array:
-                gl.vertexAttribIPointer(location, size, gl.UNSIGNED_SHORT, 0, 0);
-                break;
-        }
+
+        // 今回は頂点データはfloat32限定
+        gl.vertexAttribPointer(location, size, gl.FLOAT, false, 0, 0);
+
         if (divisor) {
             gl.vertexAttribDivisor(location, divisor);
         }
-        const a = new Float32Array(new Array(data.length).fill(0));
-        // gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
-        gl.getBufferSubData(gl.ARRAY_BUFFER, 0, a);
 
         vertices.push({
             name,
@@ -124,9 +190,8 @@ function createVertexArrayObjectWrapper(gl, attributes, indicesData) {
     }
 
     return {
-        indices,
         vao,
-        ibo,
+        indices,
         getBuffers,
         setBuffer,
         findBuffer
@@ -135,21 +200,19 @@ function createVertexArrayObjectWrapper(gl, attributes, indicesData) {
 
 // --------------------------------------------------------------------
 
-function createTransformFeedbackDoubleBuffer(gl, vertexShader, fragmentShader, attributes, varyings, srcUniforms, count) {
+function createTransformFeedbackDoubleBuffer(gl, vertexShader, fragmentShader, attributes, varyings, count) {
     let shader;
-    let uniforms;
     const buffers = [];
     let drawCount;
 
-    const getWrite = () => {
+    const getWriteTargets = () => {
         return {
             vertexArrayObjectWrapper: buffers[0].vertexArrayObjectWrapper,
             transformFeedback: buffers[1].transformFeedback,
         }
     }
 
-    const getRead = () => {
-        const buffer = buffers[0];
+    const getReadTargets = () => {
         return {
             vertexArrayObjectWrapper: buffers[1].vertexArrayObjectWrapper,
             transformFeedback: buffers[0].transformFeedback,
@@ -160,10 +223,7 @@ function createTransformFeedbackDoubleBuffer(gl, vertexShader, fragmentShader, a
         buffers.reverse();
     }
 
-    const transformFeedbackVaryings = varyings.map(({name}) => name);
-
-    shader = createShader(gl, vertexShader, fragmentShader, transformFeedbackVaryings);
-    uniforms = srcUniforms;
+    shader = createShader(gl, vertexShader, fragmentShader, varyings);
     drawCount = count;
 
     attributes.forEach((attribute, i) => {
@@ -193,139 +253,23 @@ function createTransformFeedbackDoubleBuffer(gl, vertexShader, fragmentShader, a
     );
 
     buffers.push({
-        name: "buffer1",
-        // attributes: attributes1,
-        // srcVertexArrayObject: vertexArrayObject1,
-        // transformFeedback: transformFeedback2,
-        // outputVertexArrayObject: vertexArrayObject2,
-        attributes: attributes1,
         vertexArrayObjectWrapper: vertexArrayObjectWrapper1,
         transformFeedback: transformFeedback1,
     })
     buffers.push({
-        name: "buffer2",
-        // attributes: attributes2,
-        // srcVertexArrayObject: vertexArrayObject2,
-        // transformFeedback: transformFeedback1,
-        // outputVertexArrayObject: vertexArrayObject1,
-        attributes: attributes2,
         vertexArrayObjectWrapper: vertexArrayObjectWrapper2,
         transformFeedback: transformFeedback2,
     });
 
     return {
-        getRead,
-        getWrite,
+        getReadTargets,
+        getWriteTargets,
         swap,
         shader,
-        uniforms,
         drawCount
     }
 }
 
-function createShader(gl, vertexShader, fragmentShader, transformFeedbackVaryings) {
-    const buildErrorInfo = (infoLog, shaderSource, header) => {
-        return `[Shader] fragment shader has error
-            
----
-
-${infoLog}
-
----
-            
-${shaderSource.split("\n").map((line, i) => {
-            return `${i + 1}: ${line}`;
-        }).join("\n")}       
-`;
-    };
-
-    //
-    // vertex shader
-    //
-
-    // create vertex shader  
-    const vs = gl.createShader(gl.VERTEX_SHADER);
-    // set shader source (string)
-    gl.shaderSource(vs, vertexShader);
-    // compile vertex shader
-    gl.compileShader(vs);
-    // check shader info log
-    const vsInfo = gl.getShaderInfoLog(vs);
-    if (vsInfo.length > 0) {
-        const errorInfo = buildErrorInfo(vsInfo, vertexShader, "[Shader] vertex shader has error");
-        throw errorInfo;
-    }
-
-    //
-    // fragment shader
-    //
-
-    // create fragment shader  
-    const fs = gl.createShader(gl.FRAGMENT_SHADER);
-    // set shader source (string)
-    gl.shaderSource(fs, fragmentShader);
-    // compile fragment shader
-    gl.compileShader(fs);
-    const fsInfo = gl.getShaderInfoLog(fs);
-    // check shader info log
-    if (fsInfo.length > 0) {
-        const errorInfo = buildErrorInfo(fsInfo, fragmentShader, "[Shader] fragment shader has error");
-        throw errorInfo;
-    }
-
-    //
-    // program object
-    //
-
-    const program = gl.createProgram();
-
-    // attach shaders
-    gl.attachShader(program, vs);
-    gl.attachShader(program, fs);
-
-    if (transformFeedbackVaryings && transformFeedbackVaryings.length > 0) {
-        gl.transformFeedbackVaryings(
-            program,
-            transformFeedbackVaryings,
-            gl.SEPARATE_ATTRIBS // or INTERLEAVED_ATTRIBS
-        );
-    }
-
-    // program link to gl context
-    gl.linkProgram(program);
-
-    // check program info log
-    const programInfo = gl.getProgramInfoLog(program);
-    if (programInfo.length > 0) {
-        throw programInfo;
-    }
-
-    return program;
-}
-
-function setUniformValues(gl, shader, uniforms = {}) {
-    Object.keys(uniforms).forEach(uniformName => {
-        const uniform = uniforms[uniformName];
-
-        const {type, value} = uniform;
-
-        const location = gl.getUniformLocation(shader, uniformName);
-        switch (type) {
-            case UNIFORM_TYPES.Float:
-                gl.uniform1f(location, value);
-                break;
-            case UNIFORM_TYPES.Vector3:
-                gl.uniform3fv(location, value.elements);
-                break;
-            case UNIFORM_TYPES.Matrix4:
-                // arg[1] ... use transpose.
-                gl.uniformMatrix4fv(location, false, value.elements);
-                break;
-            default:
-                throw `invalid uniform - name: ${uniformName}, type: ${type}`;
-        }
-    });
-}
 
 function createBoxGeometry() {
     // -----------------------------
@@ -337,14 +281,22 @@ function createBoxGeometry() {
     // 1 ---- 3
     // -----------------------------
 
-    const boxPosition_0 = [-0.5, 0.5, 0.5];
-    const boxPosition_1 = [-0.5, -0.5, 0.5];
-    const boxPosition_2 = [0.5, 0.5, 0.5];
-    const boxPosition_3 = [0.5, -0.5, 0.5];
-    const boxPosition_4 = [0.5, 0.5, -0.5];
-    const boxPosition_5 = [0.5, -0.5, -0.5];
-    const boxPosition_6 = [-0.5, 0.5, -0.5];
-    const boxPosition_7 = [-0.5, -0.5, -0.5];
+    // const boxPosition_0 = [-0.5, 0.5, 0.5];
+    // const boxPosition_1 = [-0.5, -0.5, 0.5];
+    // const boxPosition_2 = [0.5, 0.5, 0.5];
+    // const boxPosition_3 = [0.5, -0.5, 0.5];
+    // const boxPosition_4 = [0.5, 0.5, -0.5];
+    // const boxPosition_5 = [0.5, -0.5, -0.5];
+    // const boxPosition_6 = [-0.5, 0.5, -0.5];
+    // const boxPosition_7 = [-0.5, -0.5, -0.5];
+    const boxPosition_0 = [-0.05, 0.05, 1.25];
+    const boxPosition_1 = [-0.05, -0.05, 1.25];
+    const boxPosition_2 = [0.05, 0.05, 1.25];
+    const boxPosition_3 = [0.05, -0.05, 1.25];
+    const boxPosition_4 = [0.5, 0.5, -1.25];
+    const boxPosition_5 = [0.5, -0.5, -1.25];
+    const boxPosition_6 = [-0.5, 0.5, -1.25];
+    const boxPosition_7 = [-0.5, -0.5, -1.25];
 
     const normalsRaw = [
         [0, 0, 1], // front
@@ -410,8 +362,6 @@ function createBoxGeometry() {
 // ----------------------------------------------------------------------------------
 
 const main = () => {
-    const targetCameraPosition = new Vector3(0, 0, 8);
-
     let width;
     let height;
 
@@ -427,9 +377,23 @@ layout (location = 1) in vec3 aVelocity;
 out vec3 vPosition;
 out vec3 vVelocity;
 
+uniform vec3 uChaseTargetPosition;
+uniform float uTime;
+
 void main() {
+    float fid = float(gl_VertexID);
     vPosition = aPosition + aVelocity;
-    vVelocity = vec3(.01, 0., 0.);
+    vec3 targetPositionOffset = vec3(
+        cos(uTime * 2. + fid * 1.2) * (.6 + mod(fid, 1000.) * .0005),
+        sin(uTime * .3 + fid * 1.3) * (.6 + mod(fid, 1000.) * .0005),
+        sin(uTime * .4 + fid * 1.6) * (.8 + mod(fid, 1000.) * .0005)
+    );
+    vec3 targetPosition = uChaseTargetPosition + targetPositionOffset;
+    vVelocity = mix(
+        aVelocity,
+        normalize(targetPosition - aPosition) * (.02 + mod(fid, 10.) * .001),
+        0.005 + mod(fid, 100.) * .0001
+    );
 }
         `,
         `#version 300 es
@@ -441,7 +405,6 @@ void main() {}
         [
             {
                 name: 'position',
-                // data: new Float32Array(new Array(instanceCount * 3).fill(0)),
                 data: new Float32Array(new Array(instanceCount).fill(0).map(i => {
                     return [
                         Math.random() * 2 - 1,
@@ -460,27 +423,27 @@ void main() {}
             },
         ],
         [
-            {
-                name: 'vPosition',
-                // data: new Float32Array(new Array(instanceCount).fill(0)),
-                // size: 3
-            },
-            {
-                name: 'vVelocity',
-                // data: new Float32Array(new Array(instanceCount).fill(0)),
-                // size: 3
-            }
+            'vPosition',
+            'vVelocity',
         ],
-        {},
         instanceCount
     );
 
-
     //
-    // draws
+    // box
     // 
 
     const boxGeometryData = createBoxGeometry();
+
+    const boxGeometryScaleData = new Float32Array(
+        new Array(instanceCount)
+            .fill(0)
+            .map(() => {
+                const s = Math.random() * 0.1 + 0.05;
+                return [s, s, s];
+            })
+            .flat()
+    );
 
     const boxGeometryColorData = new Float32Array(
         new Array(instanceCount)
@@ -491,7 +454,7 @@ void main() {}
             .flat()
     );
 
-    const boxVertexArrayObject = createVertexArrayObjectWrapper(
+    const boxVertexArrayObjectWrapper = createVertexArrayObjectWrapper(
         gl,
         [
             {
@@ -517,10 +480,26 @@ void main() {}
                 usage: gl.STATIC_DRAW
             },
             {
+                name: 'instanceScale',
+                data: boxGeometryScaleData,
+                size: 3,
+                location: 3,
+                divisor: 1,
+                usage: gl.STATIC_DRAW
+            },
+            {
                 name: 'instanceColor',
                 data: boxGeometryColorData,
                 size: 3,
-                location: 3,
+                location: 4,
+                divisor: 1,
+                usage: gl.STATIC_DRAW
+            },
+            {
+                name: 'instanceVelocity',
+                data: new Float32Array(new Array(instanceCount * 3).fill(0)),
+                size: 3,
+                location: 5,
                 divisor: 1,
                 usage: gl.STATIC_DRAW
             },
@@ -528,14 +507,16 @@ void main() {}
         boxGeometryData.indices
     );
 
-    const boxProgramObject = createShader(
+    const boxShader = createShader(
         gl,
         `#version 300 es
     
 layout (location = 0) in vec3 aPosition;   
 layout (location = 1) in vec3 aNormal;   
 layout (location = 2) in vec3 aInstancePosition;
-layout (location = 3) in vec3 aInstanceColor; 
+layout (location = 3) in vec3 aInstanceScale;
+layout (location = 4) in vec3 aInstanceColor; 
+layout (location = 5) in vec3 aInstanceVelocity; 
 
 uniform mat4 uWorldMatrix;
 uniform mat4 uViewMatrix;
@@ -545,14 +526,56 @@ out vec3 vColor;
 out vec3 vNormal;
 out vec4 vWorldPosition;
 
+mat4 getTranslationMat(vec3 p) {
+    return mat4(
+        // 行オーダー
+        // 1., 0., 0., aInstancePosition.x,
+        // 0., 1., 0., aInstancePosition.y,
+        // 0., 0., 1., aInstancePosition.z,
+        // 0., 0., 0., 1
+        // 列オーダー
+        1., 0., 0., 0.,
+        0., 1., 0., 0.,
+        0., 0., 1., 0.,
+        p.x, p.y, p.z, 1.
+    );
+}
+
+mat4 getScalingMat(vec3 s) {
+    return mat4(
+        // 行オーダー / 列オーダー
+        s.x, 0., 0., 0.,
+        0., s.y, 0., 0.,
+        0., 0., s.z, 0.,
+        0., 0., 0., 1.
+    );
+}
+
+mat4 getLookAtMat(vec3 lookAt, vec3 p) {
+    vec3 f = normalize(lookAt - p);
+    vec3 r = normalize(cross(vec3(0., 1., 0.), f));
+    vec3 u = cross(f, r);
+    return mat4(
+        r.x, r.y, r.z, 0.,
+        u.x, u.y, u.z, 0.,
+        f.x, f.y, f.z, 0.,
+        0., 0., 0., 1.
+    );
+}
+
 void main() {
-    vNormal = aNormal;
     vColor = aInstanceColor;
     
     vec4 localPosition = vec4(aPosition, 1.);
-    localPosition.xyz += aInstancePosition;
+    mat4 instanceMatrix =
+        getTranslationMat(aInstancePosition) *
+        getLookAtMat(aInstancePosition + aInstanceVelocity * 100., aInstancePosition) *
+        getScalingMat(aInstanceScale);
+    localPosition = instanceMatrix * localPosition;
+    
+    mat4 normalMatrix = transpose(inverse(uWorldMatrix * instanceMatrix));
+    vNormal = (normalMatrix * vec4(aNormal, 1.)).xyz;
 
-    // vec4 worldPosition = uWorldMatrix * vec4(aPosition, 1.); 
     vec4 worldPosition = uWorldMatrix * localPosition; 
     gl_Position = uProjectionMatrix * uViewMatrix * worldPosition;
 }
@@ -569,31 +592,17 @@ void main() {
     float diffuse = (dot(lightDir, normal) + 1.) * .5;
     outColor = vec4(vec3(diffuse) * vColor, 1.);
 }
-    `
+    `);
+
+    const pointerRawPosition = new Vector3(
+        wrapperElement.offsetWidth / 2,
+        wrapperElement.offsetHeight / 2,
+        0
     );
 
-    const boxUniforms = {
-        uProjectionMatrix: {
-            type: UNIFORM_TYPES.Matrix4,
-            value: Matrix4.identity()
-        },
-        uViewMatrix: {
-            type: UNIFORM_TYPES.Matrix4,
-            value: Matrix4.identity()
-        },
-        uWorldMatrix: {
-            type: UNIFORM_TYPES.Matrix4,
-            value: Matrix4.identity()
-        },
-    };
-
-    // const transformFeedback = new TransformFeedback()
-
     const onMouseMove = (e) => {
-        const nx = (e.clientX / width) * 2 - 1;
-        const ny = (e.clientY / height) * 2 - 1;
-        targetCameraPosition.x = nx * 4;
-        targetCameraPosition.y = -ny * 4 + 2;
+        pointerRawPosition.x = e.clientX;
+        pointerRawPosition.y = e.clientY;
     };
 
     const onWindowResize = () => {
@@ -604,16 +613,11 @@ void main() {
         canvasElement.height = height;
 
         gl.viewport(0, 0, width, height);
-
-        const fov = 60;
-        const aspect = width / height;
-        const near = 1;
-        const far = 20;
-        const projectionMatrix = Matrix4.getPerspectiveMatrix(fov * Math.PI / 180, aspect, near, far);
-        boxUniforms.uProjectionMatrix.value = projectionMatrix;
     };
 
-    const tick = (time) => {
+    const tick = (t) => {
+        const time = t / 1000;
+
         //
         // clear
         //
@@ -628,31 +632,54 @@ void main() {
         // カメラ更新
         //
 
+        const cameraPosition = new Vector3(0, 0, 8);
         const cameraLookAtPosition = new Vector3(0, 0, 0);
         const cameraWorldMatrix = Matrix4.getLookAtMatrix(
-            targetCameraPosition,
+            cameraPosition,
             cameraLookAtPosition,
             Vector3.up(),
             true
         );
-        boxUniforms.uViewMatrix.value = cameraWorldMatrix.invert();
+
+        const cameraViewMatrix = cameraWorldMatrix.clone().invert();
+
+        const fov = 60;
+        const aspect = width / height;
+        const near = 1;
+        const far = 20;
+        const projectionMatrix = Matrix4.getPerspectiveMatrix(fov * Math.PI / 180, aspect, near, far);
 
         //
         // update transform feedback
         //
 
-        // 書き込み用の transform feedback と vertex array object を取得
-        const writeBuffer = transformFeedbackDoubleBuffer.getWrite();
+        const nx = (pointerRawPosition.x / width) * 2 - 1;
+        const ny = (pointerRawPosition.y / height) * 2 - 1;
+        const chaseTargetPosition = new Vector3(
+            nx * 3,
+            -ny * 3,
+            0
+        );
 
-        gl.bindVertexArray(writeBuffer.vertexArrayObjectWrapper.vao);
+        // 書き込み用の transform feedback と vertex array object を取得
+        const writeBufferTargets = transformFeedbackDoubleBuffer.getWriteTargets();
+
+        gl.bindVertexArray(writeBufferTargets.vertexArrayObjectWrapper.vao);
 
         gl.useProgram(transformFeedbackDoubleBuffer.shader);
 
-        setUniformValues(gl, transformFeedbackDoubleBuffer.shader, transformFeedbackDoubleBuffer.uniforms);
+        gl.uniform3fv(
+            gl.getUniformLocation(transformFeedbackDoubleBuffer.shader, 'uChaseTargetPosition'),
+            chaseTargetPosition.elements
+        );
+        gl.uniform1f(
+            gl.getUniformLocation(transformFeedbackDoubleBuffer.shader, 'uTime'),
+            time
+        );
 
         gl.enable(gl.RASTERIZER_DISCARD);
 
-        gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, writeBuffer.transformFeedback);
+        gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, writeBufferTargets.transformFeedback);
         gl.beginTransformFeedback(gl.POINTS);
         gl.drawArrays(gl.POINTS, 0, transformFeedbackDoubleBuffer.drawCount);
         gl.endTransformFeedback();
@@ -665,9 +692,13 @@ void main() {
         gl.bindVertexArray(null);
 
         // transform feedback で更新したバッファを、描画するメッシュのバッファに割り当て
-        boxVertexArrayObject.setBuffer(
+        boxVertexArrayObjectWrapper.setBuffer(
             "instancePosition",
-            transformFeedbackDoubleBuffer.getRead().vertexArrayObjectWrapper.findBuffer("position")
+            transformFeedbackDoubleBuffer.getReadTargets().vertexArrayObjectWrapper.findBuffer("position")
+        );
+        boxVertexArrayObjectWrapper.setBuffer(
+            "instanceVelocity",
+            transformFeedbackDoubleBuffer.getReadTargets().vertexArrayObjectWrapper.findBuffer("velocity")
         );
 
         // 書き込み/読み込みをしたのでswap
@@ -677,29 +708,47 @@ void main() {
         // 描画
         //
 
-        const drawCount = boxVertexArrayObject.indices.length;
+        const meshDrawCount = boxVertexArrayObjectWrapper.indices.length;
 
-        // culling
         gl.enable(gl.CULL_FACE);
         gl.cullFace(gl.BACK);
         gl.frontFace(gl.CCW);
 
-        // depth write
         gl.depthMask(true);
-
-        // depth test
         gl.enable(gl.DEPTH_TEST);
         gl.depthFunc(gl.LEQUAL);
 
         gl.disable(gl.BLEND);
 
-        gl.useProgram(boxProgramObject);
+        gl.useProgram(boxShader);
 
-        setUniformValues(gl, boxProgramObject, boxUniforms);
+        gl.uniformMatrix4fv(
+            gl.getUniformLocation(boxShader, "uWorldMatrix"),
+            false,
+            Matrix4.identity().elements
+        )
+        gl.uniformMatrix4fv(
+            gl.getUniformLocation(boxShader, "uViewMatrix"),
+            false,
+            cameraViewMatrix.elements
+        )
+        gl.uniformMatrix4fv(
+            gl.getUniformLocation(boxShader, "uProjectionMatrix"),
+            false,
+            projectionMatrix.elements
+        );
 
-        gl.bindVertexArray(boxVertexArrayObject.vao);
+        gl.bindVertexArray(boxVertexArrayObjectWrapper.vao);
 
-        gl.drawElementsInstanced(gl.TRIANGLES, drawCount, gl.UNSIGNED_SHORT, 0, instanceCount);
+        gl.drawElementsInstanced(gl.TRIANGLES, meshDrawCount, gl.UNSIGNED_SHORT, 0, instanceCount);
+
+        gl.useProgram(null);
+
+        gl.bindVertexArray(null);
+
+        //
+        // loop
+        //
 
         gl.flush();
 
