@@ -18,7 +18,7 @@ const debuggerStates = {
     },
     baseSpeed: {
         minValue: 0.0001,
-        maxValue: 0.5,
+        maxValue: 0.3,
         currentValue: 0.05,
         stepValue: 0.001,
     },
@@ -482,8 +482,8 @@ void main() {}
             .fill(0)
             .map(() => {
                 return [
-                    Math.random() * .6 + .3,
-                    Math.random() * .3 + .2,
+                    Math.random() * .6 + .4,
+                    Math.random() * .3 + .3,
                     Math.random() * .6 + .3
                 ];
             })
@@ -600,7 +600,7 @@ mat4 getLookAtMat(vec3 lookAt, vec3 p) {
 }
 
 void main() {
-    vColor = aInstanceColor;
+    vColor = aInstanceColor * (1. - smoothstep(aPosition.z, 0., 1.25) * .3);
     
     vec4 localPosition = vec4(aPosition, 1.);
     mat4 instanceMatrix =
@@ -703,7 +703,7 @@ void main() {
 
         const fov = 50;
         const aspect = width / height;
-        const near = 1;
+        const near = 0.01;
         const far = 20;
         const projectionMatrix = Matrix4.getPerspectiveMatrix(fov * Math.PI / 180, aspect, near, far);
 
