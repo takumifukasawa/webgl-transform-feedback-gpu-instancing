@@ -416,9 +416,9 @@ void main() {
     vPosition = aPosition + aVelocity * uDeltaTime;
     // vPosition = aPosition + aVelocity;
     vec3 targetPositionOffset = vec3(
-        cos(uTime * 2. + fid * 1.2) * (.6 + mod(fid, 1000.) * .0005),
+        cos(uTime * .2 + fid * 1.2) * (.6 + mod(fid, 1000.) * .0005),
         sin(uTime * .3 + fid * 1.3) * (.7 + mod(fid, 1000.) * .0005),
-        sin(uTime * .9 + fid * 1.6) * (2. + mod(fid, 10000.) * .00005)
+        sin(uTime * .9 + fid * 1.6) * (2. + mod(fid, 1000.) * .0005)
     );
     vec3 targetPosition = uChaseTargetPosition + targetPositionOffset;
     vVelocity = mix(
@@ -697,7 +697,7 @@ void main() {
         // カメラ更新
         //
 
-        const cameraPosition = new Vector3(0, 0, 7);
+        const cameraPosition = new Vector3(0, 0, 5);
         const cameraLookAtPosition = new Vector3(0, 0, 0);
         const cameraWorldMatrix = Matrix4.getLookAtMatrix(
             cameraPosition,
@@ -708,7 +708,7 @@ void main() {
 
         const cameraViewMatrix = cameraWorldMatrix.clone().invert();
 
-        const fov = 50;
+        const fov = 80;
         const aspect = width / height;
         const near = 0.01;
         const far = 20;
