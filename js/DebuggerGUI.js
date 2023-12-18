@@ -5,7 +5,7 @@ export class DebuggerGUI {
     constructor() {
         this.rootElement = document.createElement('div');
 
-        this.rootElement.style.cssText = `
+            this.rootElement.style.cssText = `
                 background-color: rgb(200 200 255 / 70%);
                 position: absolute;
                 top: 0px;

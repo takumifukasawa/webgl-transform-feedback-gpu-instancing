@@ -3,6 +3,8 @@ import {Vector3} from "./js/Vector3.js";
 import {DebuggerGUI} from "./js/DebuggerGUI.js";
 import {FPSCounter} from "./js/FPSCounter.js";
 
+const isSP = !!window.navigator.userAgent.match(/(iPhone|iPad|iPod|Android)/i);
+
 const wrapperElement = document.getElementById("js-wrapper")
 const canvasElement = document.getElementById("js-canvas");
 const gl = canvasElement.getContext("webgl2", {antialias: false});
@@ -17,10 +19,10 @@ const debuggerStates = {
         stepValue: 1
     },
     baseSpeed: {
-        minValue: 0.0001,
-        maxValue: 0.3,
-        currentValue: 0.05,
-        stepValue: 0.001,
+        minValue: 0.01,
+        maxValue: 20,
+        currentValue: 5,
+        stepValue: 0.1,
     },
     baseAttractRate: {
         minValue: 0.001,
@@ -411,8 +413,8 @@ uniform float uBaseAttractRate;
 
 void main() {
     float fid = float(gl_VertexID);
-    // vPosition = aPosition + aVelocity * uDeltaTime * 10.;
-    vPosition = aPosition + aVelocity;
+    vPosition = aPosition + aVelocity * uDeltaTime;
+    // vPosition = aPosition + aVelocity;
     vec3 targetPositionOffset = vec3(
         cos(uTime * 2. + fid * 1.2) * (.6 + mod(fid, 1000.) * .0005),
         sin(uTime * .3 + fid * 1.3) * (.7 + mod(fid, 1000.) * .0005),
@@ -657,6 +659,11 @@ void main() {
         pointerRawPosition.y = e.clientY;
     };
 
+    const onTouchMove = (e) => {
+        pointerRawPosition.x = e.touches[0].clientX;
+        pointerRawPosition.y = e.touches[0].clientY;
+    }
+
     const onWindowResize = () => {
         width = wrapperElement.offsetWidth;
         height = wrapperElement.offsetHeight;
@@ -851,7 +858,11 @@ void main() {
 
     onWindowResize();
     window.addEventListener('resize', onWindowResize);
-    window.addEventListener('mousemove', onMouseMove);
+    if (isSP) {
+        window.addEventListener('touchmove', onTouchMove);
+    } else {
+        window.addEventListener('mousemove', onMouseMove);
+    }
     requestAnimationFrame(tick);
 };
 
