@@ -1,11 +1,37 @@
 import {Matrix4} from "./js/Matrix4.js";
 import {Vector3} from "./js/Vector3.js";
+import {DebuggerGUI} from "./js/DebuggerGUI.js";
+import {FPSCounter} from "./js/FPSCounter.js";
 
 const wrapperElement = document.getElementById("js-wrapper")
 const canvasElement = document.getElementById("js-canvas");
 const gl = canvasElement.getContext("webgl2", {antialias: false});
 
-const instanceCount = 65536;
+const maxInstanceCount = 65536 * 2;
+
+const debuggerStates = {
+    instanceCount: {
+        minValue: 1,
+        maxValue: maxInstanceCount,
+        currentValue: 2048,
+        stepValue: 1
+    },
+    baseSpeed: {
+        minValue: 0.0001,
+        maxValue: 0.5,
+        currentValue: 0.05,
+        stepValue: 0.001,
+    },
+    baseAttractRate: {
+        minValue: 0.001,
+        maxValue: 0.1,
+        currentValue: 0.01,
+        stepValue: 0.001,
+    }
+}
+
+let fpsCounterView;
+const fpsCounter = new FPSCounter(1);
 
 
 // --------------------------------------------------------------------
@@ -379,20 +405,26 @@ out vec3 vVelocity;
 
 uniform vec3 uChaseTargetPosition;
 uniform float uTime;
+uniform float uDeltaTime;
+uniform float uBaseSpeed;
+uniform float uBaseAttractRate;
 
 void main() {
     float fid = float(gl_VertexID);
+    // vPosition = aPosition + aVelocity * uDeltaTime * 10.;
     vPosition = aPosition + aVelocity;
     vec3 targetPositionOffset = vec3(
         cos(uTime * 2. + fid * 1.2) * (.6 + mod(fid, 1000.) * .0005),
-        sin(uTime * .3 + fid * 1.3) * (.6 + mod(fid, 1000.) * .0005),
-        sin(uTime * .4 + fid * 1.6) * (.8 + mod(fid, 1000.) * .0005)
+        sin(uTime * .3 + fid * 1.3) * (.7 + mod(fid, 1000.) * .0005),
+        sin(uTime * .9 + fid * 1.6) * (2. + mod(fid, 10000.) * .00005)
     );
     vec3 targetPosition = uChaseTargetPosition + targetPositionOffset;
     vVelocity = mix(
         aVelocity,
-        normalize(targetPosition - aPosition) * (.02 + mod(fid, 10.) * .001),
-        0.005 + mod(fid, 100.) * .0001
+        // normalize(targetPosition - aPosition) * (uBaseSpeed + mod(fid, 1000.) * .0001),
+        normalize(targetPosition - aPosition) * uBaseSpeed,
+        // 0.01 + mod(fid, 100.) * .01
+        uBaseAttractRate + mod(fid, 100.) * .0002
     );
 }
         `,
@@ -405,7 +437,7 @@ void main() {}
         [
             {
                 name: 'position',
-                data: new Float32Array(new Array(instanceCount).fill(0).map(i => {
+                data: new Float32Array(new Array(maxInstanceCount).fill(0).map(i => {
                     return [
                         Math.random() * 2 - 1,
                         Math.random() * 2 - 1,
@@ -417,7 +449,7 @@ void main() {}
             },
             {
                 name: 'velocity',
-                data: new Float32Array(new Array(instanceCount * 3).fill(0)),
+                data: new Float32Array(new Array(maxInstanceCount * 3).fill(0)),
                 size: 3,
                 usage: gl.DYNAMIC_DRAW,
             },
@@ -426,7 +458,7 @@ void main() {}
             'vPosition',
             'vVelocity',
         ],
-        instanceCount
+        maxInstanceCount
     );
 
     //
@@ -436,20 +468,24 @@ void main() {}
     const boxGeometryData = createBoxGeometry();
 
     const boxGeometryScaleData = new Float32Array(
-        new Array(instanceCount)
+        new Array(maxInstanceCount)
             .fill(0)
             .map(() => {
-                const s = Math.random() * 0.1 + 0.05;
+                const s = Math.random() * 0.05 + 0.03;
                 return [s, s, s];
             })
             .flat()
     );
 
     const boxGeometryColorData = new Float32Array(
-        new Array(instanceCount)
+        new Array(maxInstanceCount)
             .fill(0)
             .map(() => {
-                return [Math.random(), Math.random(), Math.random()];
+                return [
+                    Math.random() * .6 + .3,
+                    Math.random() * .3 + .2,
+                    Math.random() * .6 + .3
+                ];
             })
             .flat()
     );
@@ -473,7 +509,7 @@ void main() {}
             },
             {
                 name: 'instancePosition',
-                data: new Float32Array(new Array(instanceCount * 3).fill(0)),
+                data: new Float32Array(new Array(maxInstanceCount * 3).fill(0)),
                 size: 3,
                 location: 2,
                 divisor: 1,
@@ -497,7 +533,7 @@ void main() {}
             },
             {
                 name: 'instanceVelocity',
-                data: new Float32Array(new Array(instanceCount * 3).fill(0)),
+                data: new Float32Array(new Array(maxInstanceCount * 3).fill(0)),
                 size: 3,
                 location: 5,
                 divisor: 1,
@@ -582,15 +618,31 @@ void main() {
     `,
         `#version 300 es
 precision mediump float;
+
 in vec3 vNormal;
 in vec4 vWorldPosition;
 in vec3 vColor;
+
 out vec4 outColor;
+
+uniform vec3 uCameraPosition;
+
 void main() {
-    vec3 lightDir = normalize(vec3(1., 1., 1.));
-    vec3 normal = normalize(vNormal);
-    float diffuse = (dot(lightDir, normal) + 1.) * .5;
-    outColor = vec4(vec3(diffuse) * vColor, 1.);
+    vec3 L = normalize(vec3(0., .8, 1.));
+    vec3 N = normalize(vNormal);
+    float NdotL = dot(L, N);
+    vec3 PtoE = normalize(uCameraPosition - vWorldPosition.xyz);
+    vec3 H = normalize(PtoE + L);
+    float HdotN = clamp(dot(H, N), 0., 1.);
+    
+    float diffuse = (NdotL + 1.) * .5;
+    
+    // float specularPower = 128.;
+    // float specular = pow(HdotN, specularPower);
+    // vec3 specularColor = vec3(1., 1., 1.);
+    
+    outColor = vec4(diffuse * vColor, 1.);
+    // outColor = vec4(diffuse * vColor + specular * specularColor, 1.);
 }
     `);
 
@@ -615,8 +667,14 @@ void main() {
         gl.viewport(0, 0, width, height);
     };
 
+    let beforeTime = performance.now() / 1000;
+
     const tick = (t) => {
         const time = t / 1000;
+
+        const deltaTime = time - beforeTime;
+
+        beforeTime = time;
 
         //
         // clear
@@ -632,7 +690,7 @@ void main() {
         // カメラ更新
         //
 
-        const cameraPosition = new Vector3(0, 0, 8);
+        const cameraPosition = new Vector3(0, 0, 7);
         const cameraLookAtPosition = new Vector3(0, 0, 0);
         const cameraWorldMatrix = Matrix4.getLookAtMatrix(
             cameraPosition,
@@ -643,7 +701,7 @@ void main() {
 
         const cameraViewMatrix = cameraWorldMatrix.clone().invert();
 
-        const fov = 60;
+        const fov = 50;
         const aspect = width / height;
         const near = 1;
         const far = 20;
@@ -668,20 +726,33 @@ void main() {
 
         gl.useProgram(transformFeedbackDoubleBuffer.shader);
 
+        gl.uniform1f(
+            gl.getUniformLocation(transformFeedbackDoubleBuffer.shader, 'uTime'),
+            time
+        );
+        gl.uniform1f(
+            gl.getUniformLocation(transformFeedbackDoubleBuffer.shader, 'uDeltaTime'),
+            deltaTime
+        );
         gl.uniform3fv(
             gl.getUniformLocation(transformFeedbackDoubleBuffer.shader, 'uChaseTargetPosition'),
             chaseTargetPosition.elements
         );
         gl.uniform1f(
-            gl.getUniformLocation(transformFeedbackDoubleBuffer.shader, 'uTime'),
-            time
+            gl.getUniformLocation(transformFeedbackDoubleBuffer.shader, 'uBaseSpeed'),
+            debuggerStates.baseSpeed.currentValue
+        );
+        gl.uniform1f(
+            gl.getUniformLocation(transformFeedbackDoubleBuffer.shader, 'uBaseAttractRate'),
+            debuggerStates.baseAttractRate.currentValue
         );
 
         gl.enable(gl.RASTERIZER_DISCARD);
 
         gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, writeBufferTargets.transformFeedback);
         gl.beginTransformFeedback(gl.POINTS);
-        gl.drawArrays(gl.POINTS, 0, transformFeedbackDoubleBuffer.drawCount);
+        // gl.drawArrays(gl.POINTS, 0, transformFeedbackDoubleBuffer.drawCount);
+        gl.drawArrays(gl.POINTS, 0, debuggerStates.instanceCount.currentValue);
         gl.endTransformFeedback();
         gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, null);
 
@@ -737,10 +808,14 @@ void main() {
             false,
             projectionMatrix.elements
         );
+        gl.uniform3fv(
+            gl.getUniformLocation(boxShader, "uCameraPosition"),
+            cameraPosition.elements
+        );
 
         gl.bindVertexArray(boxVertexArrayObjectWrapper.vao);
 
-        gl.drawElementsInstanced(gl.TRIANGLES, meshDrawCount, gl.UNSIGNED_SHORT, 0, instanceCount);
+        gl.drawElementsInstanced(gl.TRIANGLES, meshDrawCount, gl.UNSIGNED_SHORT, 0, debuggerStates.instanceCount.currentValue);
 
         gl.useProgram(null);
 
@@ -753,7 +828,26 @@ void main() {
         gl.flush();
 
         requestAnimationFrame(tick);
+
+        fpsCounter.calculate(time);
+        fpsCounterView.textContent = `fps: ${Math.floor(fpsCounter.currentFPS).toString()}`;
     };
+
+    const debuggerGUI = new DebuggerGUI();
+    fpsCounterView = debuggerGUI.addText("");
+    Object.keys(debuggerStates).forEach(key => {
+        debuggerGUI.addSliderDebugger({
+            label: key,
+            minValue: debuggerStates[key].minValue,
+            maxValue: debuggerStates[key].maxValue,
+            initialValue: debuggerStates[key].currentValue,
+            stepValue: debuggerStates[key].stepValue,
+            onChange: (value) => {
+                debuggerStates[key].currentValue = value;
+            },
+        });
+    });
+    wrapperElement.appendChild(debuggerGUI.rootElement);
 
     onWindowResize();
     window.addEventListener('resize', onWindowResize);
