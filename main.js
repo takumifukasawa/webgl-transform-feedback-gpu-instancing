@@ -9,6 +9,8 @@ const wrapperElement = document.getElementById("js-wrapper")
 const canvasElement = document.getElementById("js-canvas");
 const gl = canvasElement.getContext("webgl2", {antialias: false});
 
+const pixelRatio = Math.max(window.devicePixelRatio, 1.5);
+
 const maxInstanceCount = 65536 * 2;
 
 const debuggerStates = {
@@ -152,19 +154,19 @@ function createVertexArrayObjectWrapper(gl, attributes, indicesData) {
         return vertices.map(({vbo}) => vbo);
     }
 
-    const setBuffer = (name, newBuffer) => {
-        const target = vertices.find(elem => elem.name === name);
-        target.buffer = newBuffer;
-        gl.bindVertexArray(vao);
-        gl.bindBuffer(gl.ARRAY_BUFFER, newBuffer);
-        gl.enableVertexAttribArray(target.location);
-        gl.vertexAttribPointer(target.location, target.size, gl.FLOAT, false, 0, 0);
-        // divisorは必要ない
-        // if (target.divisor) {
-        //     gl.vertexAttribDivisor(target.location, target.divisor);
-        // }
-        gl.bindVertexArray(null);
-    }
+    // const setBuffer = (name, newBuffer) => {
+    //     const target = vertices.find(elem => elem.name === name);
+    //     target.buffer = newBuffer;
+    //     gl.bindVertexArray(vao);
+    //     gl.bindBuffer(gl.ARRAY_BUFFER, newBuffer);
+    //     gl.enableVertexAttribArray(target.location);
+    //     gl.vertexAttribPointer(target.location, target.size, gl.FLOAT, false, 0, 0);
+    //     // divisorは必要ない
+    //     // if (target.divisor) {
+    //     //     gl.vertexAttribDivisor(target.location, target.divisor);
+    //     // }
+    //     gl.bindVertexArray(null);
+    // }
 
     const findBuffer = (name) => {
         return vertices.find(elem => elem.name === name).vbo;
@@ -220,11 +222,27 @@ function createVertexArrayObjectWrapper(gl, attributes, indicesData) {
     return {
         vao,
         indices,
+        vertices,
         getBuffers,
-        setBuffer,
         findBuffer
     }
 }
+
+
+function setBufferToVAO(vaoWrapper, name, newBuffer) {
+    const target = vaoWrapper.vertices.find(elem => elem.name === name);
+    target.buffer = newBuffer;
+    gl.bindVertexArray(vaoWrapper.vao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, newBuffer);
+    gl.enableVertexAttribArray(target.location);
+    gl.vertexAttribPointer(target.location, target.size, gl.FLOAT, false, 0, 0);
+    // divisorは必要ない
+    // if (target.divisor) {
+    //     gl.vertexAttribDivisor(target.location, target.divisor);
+    // }
+    gl.bindVertexArray(null);
+}
+
 
 // --------------------------------------------------------------------
 
@@ -411,22 +429,29 @@ uniform float uDeltaTime;
 uniform float uBaseSpeed;
 uniform float uBaseAttractRate;
 
+float rand(vec2 co){
+    return fract(sin(dot(co, vec2(12.9898, 78.233))) * 43758.5453);
+}
+
 void main() {
     float fid = float(gl_VertexID);
+    float hashA = rand(vec2(fid, fid));
+    float hashB = rand(vec2(hashA, hashA));
     vPosition = aPosition + aVelocity * uDeltaTime;
-    // vPosition = aPosition + aVelocity;
     vec3 targetPositionOffset = vec3(
-        cos(uTime * .2 + fid * 1.2) * (.6 + mod(fid, 1000.) * .0005),
-        sin(uTime * .3 + fid * 1.3) * (.7 + mod(fid, 1000.) * .0005),
-        sin(uTime * .9 + fid * 1.6) * (2. + mod(fid, 1000.) * .0005)
+        // cos(uTime * (hashB * 1.) + hashA * 10.) * (.7 + hashA * .5),
+        // sin(uTime * (hashB * 2.) + hashA * 30.) * (.7 + hashA * .5),
+        // sin(uTime * (hashB * 3.) + hashA * 40.) * (1.4 + hashA * .3) + 1.
+        cos(uTime * (mod(fid, 2048.) * .001) + mod(fid, 2048.) * 10.) * (0.7 + hashA * .5),
+        sin(uTime * (mod(fid, 2048.) * .002) + mod(fid, 2048.) * 30.) * (0.7 + hashA * .5),
+        sin(uTime * (mod(fid, 2048.) * .003) + mod(fid, 2048.) * 40.) * (1.4 + hashA * .3) + 1.
     );
     vec3 targetPosition = uChaseTargetPosition + targetPositionOffset;
     vVelocity = mix(
         aVelocity,
-        // normalize(targetPosition - aPosition) * (uBaseSpeed + mod(fid, 1000.) * .0001),
         normalize(targetPosition - aPosition) * uBaseSpeed,
-        // 0.01 + mod(fid, 100.) * .01
-        uBaseAttractRate + mod(fid, 100.) * .0002
+        // uBaseAttractRate + hashA * .01
+        uBaseAttractRate + mod(fid, 1024.) * .00001
     );
 }
         `,
@@ -668,10 +693,10 @@ void main() {
         width = wrapperElement.offsetWidth;
         height = wrapperElement.offsetHeight;
 
-        canvasElement.width = width;
-        canvasElement.height = height;
+        canvasElement.width = width * pixelRatio;
+        canvasElement.height = height * pixelRatio;
 
-        gl.viewport(0, 0, width, height);
+        gl.viewport(0, 0, width * pixelRatio, height * pixelRatio);
     };
 
     let beforeTime = performance.now() / 1000;
@@ -770,11 +795,13 @@ void main() {
         gl.bindVertexArray(null);
 
         // transform feedback で更新したバッファを、描画するメッシュのバッファに割り当て
-        boxVertexArrayObjectWrapper.setBuffer(
+        setBufferToVAO(
+            boxVertexArrayObjectWrapper,
             "instancePosition",
-            transformFeedbackDoubleBuffer.getReadTargets().vertexArrayObjectWrapper.findBuffer("position")
+            writeBufferTargets.vertexArrayObjectWrapper.findBuffer("position")
         );
-        boxVertexArrayObjectWrapper.setBuffer(
+        setBufferToVAO(
+            boxVertexArrayObjectWrapper,
             "instanceVelocity",
             transformFeedbackDoubleBuffer.getReadTargets().vertexArrayObjectWrapper.findBuffer("velocity")
         );
