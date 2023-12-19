@@ -28,7 +28,7 @@ const debuggerStates = {
     },
     baseAttractRate: {
         minValue: 0.001,
-        maxValue: 0.1,
+        maxValue: 0.05,
         currentValue: 0.01,
         stepValue: 0.001,
     }
@@ -251,17 +251,12 @@ function createTransformFeedbackDoubleBuffer(gl, vertexShader, fragmentShader, a
     const buffers = [];
     let drawCount;
 
+    const getReadVAOWrapper = () => buffers[0].vertexArrayObjectWrapper; // 前フレームの情報
+
     const getWriteTargets = () => {
         return {
-            vertexArrayObjectWrapper: buffers[0].vertexArrayObjectWrapper,
-            transformFeedback: buffers[1].transformFeedback,
-        }
-    }
-
-    const getReadTargets = () => {
-        return {
-            vertexArrayObjectWrapper: buffers[1].vertexArrayObjectWrapper,
-            transformFeedback: buffers[0].transformFeedback,
+            vertexArrayObjectWrapper: buffers[1].vertexArrayObjectWrapper, // 現在フレームの情報
+            transformFeedback: buffers[1].transformFeedback, // 現在フレームで使用する Transform Feedback
         }
     }
 
@@ -308,7 +303,7 @@ function createTransformFeedbackDoubleBuffer(gl, vertexShader, fragmentShader, a
     });
 
     return {
-        getReadTargets,
+        getReadVAOWrapper,
         getWriteTargets,
         swap,
         shader,
@@ -419,6 +414,7 @@ precision mediump float;
 
 layout (location = 0) in vec3 aPosition;
 layout (location = 1) in vec3 aVelocity;
+layout (location = 2) in vec3 aSeed;
 
 out vec3 vPosition;
 out vec3 vVelocity;
@@ -429,29 +425,28 @@ uniform float uDeltaTime;
 uniform float uBaseSpeed;
 uniform float uBaseAttractRate;
 
+// base: https://stackoverflow.com/questions/4200224/random-noise-functions-for-glsl
+// 0 ~ 1
 float rand(vec2 co){
     return fract(sin(dot(co, vec2(12.9898, 78.233))) * 43758.5453);
 }
 
 void main() {
     float fid = float(gl_VertexID);
-    float hashA = rand(vec2(fid, fid));
-    float hashB = rand(vec2(hashA, hashA));
     vPosition = aPosition + aVelocity * uDeltaTime;
+    float hashA = rand(vec2(fid, aSeed.x));
+    float hashB = rand(vec2(fid, aSeed.y));
+    float hashC = rand(vec2(fid, aSeed.z));
     vec3 targetPositionOffset = vec3(
-        // cos(uTime * (hashB * 1.) + hashA * 10.) * (.7 + hashA * .5),
-        // sin(uTime * (hashB * 2.) + hashA * 30.) * (.7 + hashA * .5),
-        // sin(uTime * (hashB * 3.) + hashA * 40.) * (1.4 + hashA * .3) + 1.
-        cos(uTime * (mod(fid, 2048.) * .001) + mod(fid, 2048.) * 10.) * (0.7 + hashA * .5),
-        sin(uTime * (mod(fid, 2048.) * .002) + mod(fid, 2048.) * 30.) * (0.7 + hashA * .5),
-        sin(uTime * (mod(fid, 2048.) * .003) + mod(fid, 2048.) * 40.) * (1.4 + hashA * .3) + 1.
+        cos(uTime * (.2 + hashA * 1.) + hashB * 10.) * .9,
+        sin(uTime * (.2 + hashB * 1.) + hashB * 20.) * .9,
+        sin(uTime * (.3 + hashC * 1.) + hashB * 30.) * 1. + 1.6
     );
     vec3 targetPosition = uChaseTargetPosition + targetPositionOffset;
     vVelocity = mix(
         aVelocity,
-        normalize(targetPosition - aPosition) * uBaseSpeed,
-        // uBaseAttractRate + hashA * .01
-        uBaseAttractRate + mod(fid, 1024.) * .00001
+        normalize(targetPosition - aPosition) * (uBaseSpeed + hashC * uBaseSpeed),
+        uBaseAttractRate + hashA * .01
     );
 }
         `,
@@ -466,9 +461,9 @@ void main() {}
                 name: 'position',
                 data: new Float32Array(new Array(maxInstanceCount).fill(0).map(i => {
                     return [
-                        Math.random() * 2 - 1,
-                        Math.random() * 2 - 1,
-                        Math.random() * 2 - 1,
+                        Math.random() * 4 - 2,
+                        Math.random() * 4 - 2,
+                        Math.random() * 4 - 2,
                     ]
                 }).flat()),
                 size: 3,
@@ -478,6 +473,21 @@ void main() {}
                 name: 'velocity',
                 data: new Float32Array(new Array(maxInstanceCount * 3).fill(0)),
                 size: 3,
+                usage: gl.DYNAMIC_DRAW,
+            },
+            {
+                name: 'seed',
+                // data: new Float32Array(new Array(maxInstanceCount * 1).fill(0).map(() => {
+                //     return Math.random() * 2048;
+                // })),
+                data: new Float32Array(new Array(maxInstanceCount * 3).fill(0).map(() => {
+                    return [
+                        Math.random() * 2048,
+                        Math.random() * 2048,
+                        Math.random() * 2048,
+                    ]
+                }).flat()),
+                size: 1,
                 usage: gl.DYNAMIC_DRAW,
             },
         ],
@@ -498,7 +508,7 @@ void main() {}
         new Array(maxInstanceCount)
             .fill(0)
             .map(() => {
-                const s = Math.random() * 0.05 + 0.03;
+                const s = Math.random() * 0.05 + 0.02;
                 return [s, s, s];
             })
             .flat()
@@ -753,8 +763,10 @@ void main() {
 
         // 書き込み用の transform feedback と vertex array object を取得
         const writeBufferTargets = transformFeedbackDoubleBuffer.getWriteTargets();
+        // 参照元の transform feedback と vertex array object を取得
+        const readVAO = transformFeedbackDoubleBuffer.getReadVAOWrapper().vao;
 
-        gl.bindVertexArray(writeBufferTargets.vertexArrayObjectWrapper.vao);
+        gl.bindVertexArray(readVAO);
 
         gl.useProgram(transformFeedbackDoubleBuffer.shader);
 
@@ -783,7 +795,6 @@ void main() {
 
         gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, writeBufferTargets.transformFeedback);
         gl.beginTransformFeedback(gl.POINTS);
-        // gl.drawArrays(gl.POINTS, 0, transformFeedbackDoubleBuffer.drawCount);
         gl.drawArrays(gl.POINTS, 0, debuggerStates.instanceCount.currentValue);
         gl.endTransformFeedback();
         gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, null);
@@ -803,7 +814,7 @@ void main() {
         setBufferToVAO(
             boxVertexArrayObjectWrapper,
             "instanceVelocity",
-            transformFeedbackDoubleBuffer.getReadTargets().vertexArrayObjectWrapper.findBuffer("velocity")
+            writeBufferTargets.vertexArrayObjectWrapper.findBuffer("velocity")
         );
 
         // 書き込み/読み込みをしたのでswap
