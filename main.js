@@ -23,7 +23,7 @@ const debuggerStates = {
     baseSpeed: {
         minValue: 0.01,
         maxValue: 20,
-        currentValue: 5,
+        currentValue: 3,
         stepValue: 0.1,
     },
     baseAttractRate: {
@@ -414,7 +414,6 @@ precision mediump float;
 
 layout (location = 0) in vec3 aPosition;
 layout (location = 1) in vec3 aVelocity;
-layout (location = 2) in vec3 aSeed;
 
 out vec3 vPosition;
 out vec3 vVelocity;
@@ -425,7 +424,7 @@ uniform float uDeltaTime;
 uniform float uBaseSpeed;
 uniform float uBaseAttractRate;
 
-// base: https://stackoverflow.com/questions/4200224/random-noise-functions-for-glsl
+// ref: https://thebookofshaders.com/10/
 // 0 ~ 1
 float rand(vec2 co){
     return fract(sin(dot(co, vec2(12.9898, 78.233))) * 43758.5453);
@@ -434,19 +433,19 @@ float rand(vec2 co){
 void main() {
     float fid = float(gl_VertexID);
     vPosition = aPosition + aVelocity * uDeltaTime;
-    float hashA = rand(vec2(fid, aSeed.x));
-    float hashB = rand(vec2(fid, aSeed.y));
-    float hashC = rand(vec2(fid, aSeed.z));
+    float hashA = rand(vec2(fid * .2, fid * .3));
+    float hashB = rand(vec2(fid * .3, fid * .4));
+    float hashC = rand(vec2(fid * .4, fid * .5));
     vec3 targetPositionOffset = vec3(
-        cos(uTime * (.2 + hashA * 1.) + hashB * 10.) * .9,
-        sin(uTime * (.2 + hashB * 1.) + hashB * 20.) * .9,
-        sin(uTime * (.3 + hashC * 1.) + hashB * 30.) * 1. + 1.6
+        cos(uTime * (hashA + hashA * 1.) + hashA * 10.) * (.6 + hashA * .2),
+        sin(uTime * (hashB + hashB * 1.1) + hashB * 20.) * (.6 + hashB * .2),
+        sin(uTime * (hashC + hashC * 1.2) + hashC * 30.) * (1. + hashC * .2) + 2.2
     );
     vec3 targetPosition = uChaseTargetPosition + targetPositionOffset;
     vVelocity = mix(
         aVelocity,
-        normalize(targetPosition - aPosition) * (uBaseSpeed + hashC * uBaseSpeed),
-        uBaseAttractRate + hashA * .01
+        normalize(targetPosition - aPosition) * (uBaseSpeed + hashA * hashB),
+        uBaseAttractRate + hashC * .01
     );
 }
         `,
@@ -461,9 +460,9 @@ void main() {}
                 name: 'position',
                 data: new Float32Array(new Array(maxInstanceCount).fill(0).map(i => {
                     return [
-                        Math.random() * 4 - 2,
-                        Math.random() * 4 - 2,
-                        Math.random() * 4 - 2,
+                        Math.random() * 2 - 1,
+                        Math.random() * 2 - 1,
+                        Math.random() * 2 - 1,
                     ]
                 }).flat()),
                 size: 3,
@@ -473,21 +472,6 @@ void main() {}
                 name: 'velocity',
                 data: new Float32Array(new Array(maxInstanceCount * 3).fill(0)),
                 size: 3,
-                usage: gl.DYNAMIC_DRAW,
-            },
-            {
-                name: 'seed',
-                // data: new Float32Array(new Array(maxInstanceCount * 1).fill(0).map(() => {
-                //     return Math.random() * 2048;
-                // })),
-                data: new Float32Array(new Array(maxInstanceCount * 3).fill(0).map(() => {
-                    return [
-                        Math.random() * 2048,
-                        Math.random() * 2048,
-                        Math.random() * 2048,
-                    ]
-                }).flat()),
-                size: 1,
                 usage: gl.DYNAMIC_DRAW,
             },
         ],
@@ -508,7 +492,7 @@ void main() {}
         new Array(maxInstanceCount)
             .fill(0)
             .map(() => {
-                const s = Math.random() * 0.05 + 0.02;
+                const s = Math.random() * 0.04 + 0.015;
                 return [s, s, s];
             })
             .flat()
@@ -519,10 +503,10 @@ void main() {}
             .fill(0)
             .map(() => {
                 return [
-                    Math.random() * .6 + .4,
+                    Math.random() * .7 + .3,
                     Math.random() * .3 + .3,
-                    Math.random() * .6 + .3
-                ];
+                    Math.random() * .7 + .3
+                ]
             })
             .flat()
     );
